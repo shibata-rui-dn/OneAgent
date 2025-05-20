@@ -26,14 +26,6 @@ from search_enhancer import (
 from search_agent import run_search_agent, MyCustomCallbackHandler
 
 # -------------------------------
-# 以下、類義語検索用の初期化（chikkarpy）を追加
-from chikkarpy import Chikkar
-from chikkarpy.dictionarylib import Dictionary
-
-chikkar = Chikkar()
-system_dic = Dictionary("./dict/system_synonym.dic")  # システム同義語辞書を利用
-chikkar.add_dictionary(system_dic)
-# -------------------------------
 
 # app_dir を動的に取得するヘルパー関数
 def get_app_dir():
@@ -243,22 +235,6 @@ def search():
     index_type = request.args.get("index_type", "other")
     ix = indices.get(index_type, indices["other"])
     results_list = perform_search_with_mode(ix, query, mode=mode, limit=limit)
-
-    # もし元のクエリの検索結果が０件の場合、類義語を用いて検索を実施する
-    if not results_list:
-        synonyms = chikkar.find(query)
-        if synonyms:
-            synonyms = synonyms[:5]  # 最大5件の類義語を利用
-            aggregated_results = []
-            seen_paths = set()
-            for synonym in synonyms:
-                synonym_results = perform_search_with_mode(ix, synonym, mode=mode, limit=5)
-                for res in synonym_results:
-                    # 重複するファイルパスを除外
-                    if res.get("path") not in seen_paths:
-                        aggregated_results.append(res)
-                        seen_paths.add(res.get("path"))
-            results_list = aggregated_results
 
     # mapping.json は docs_lake_dir 内に存在する（docs index のみ有効）
     mapping = {}
