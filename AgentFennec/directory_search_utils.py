@@ -342,7 +342,7 @@ def refresh_search_index():
     """
     global file_index, file_index_needs_update
     config = get_config()
-    app_dir = config.get("app_dir", os.path.join(os.getcwd(), "docs/root"))
+    app_dir = config.get("app_dir", os.path.join(os.getcwd(), 'docs/root'))
     file_index = build_search_index(app_dir)
     file_index_needs_update = False
     print(f"検索インデックスを更新しました。ファイル数: {len(file_index['files'])}")
@@ -453,7 +453,7 @@ def folder_summary(mode: str = "top", n: int = None) -> str:
             summary_lines = [f"{ext if ext else '[no ext]'}: {count}" for ext, count in result]
         # Add folder tree (extension "*", depth 2)  
         # Use "./" as folder_relative_path with app_dir as base path
-        app_dir = config.get("app_dir", os.path.join(os.getcwd(), "docs/root"))
+        app_dir = config.get("app_dir", os.path.join(os.getcwd(), 'docs/root'))
         folder_tree_display = get_folder_tree(tree, "*", debug=False, 
                                               file_count_threshold=config.get("file_count_threshold", 30), 
                                               base_path=app_dir, max_depth=2)
@@ -477,7 +477,7 @@ def folder_structure(folder_relative_path: str, extension:str, max_depth: int = 
     """
     config = get_config()
     file_count_threshold = config.get("file_count_threshold", 30)
-    app_dir = config.get("app_dir", os.path.join(os.getcwd(), "docs/root"))
+    app_dir = config.get("app_dir", os.path.join(os.getcwd(), 'docs/root'))
     # Normalize folder_relative_path
     frp = normalize_folder_relative_path(folder_relative_path, app_dir)
     folder_path = os.path.join(app_dir, frp) if frp else app_dir
@@ -533,7 +533,7 @@ def search_files(query: str, folder_relative_path: str, extension: str = "") -> 
     global file_index, file_index_needs_update
     
     config = get_config()
-    app_dir = config.get("app_dir", os.path.join(os.getcwd(), "docs/root"))
+    app_dir = config.get("app_dir", os.path.join(os.getcwd(), 'docs/root'))
     max_results = config.get("search_max_results", 10)
     
     # インデックスが存在しない場合は構築

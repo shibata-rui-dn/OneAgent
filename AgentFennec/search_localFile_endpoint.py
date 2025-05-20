@@ -31,7 +31,7 @@ from search_agent import run_search_agent, MyCustomCallbackHandler
 def get_app_dir():
     config = get_config()
     default_app_dir = Path.cwd() / "docs" / "root"
-    return Path(config.get("app_dir", str(default_app_dir)))
+    return Path(config.get('app_dir', str(default_app_dir)))
 
 # docs_lake_dir は app_dir と config の "docs_lake_dir"（存在しなければ既定値 "__docs__"）を結合して表現
 def get_docs_lake_dir():
@@ -499,7 +499,7 @@ def get_config_endpoint():
     return jsonify({
         "end_point": config.get("end_point"),
         "api_key": config.get("api_key"),
-        "app_dir": config.get("app_dir")
+        'app_dir': config.get('app_dir')
     })
 
 @app.route("/config", methods=["POST"])
@@ -508,20 +508,20 @@ def update_config_endpoint():
     data = request.get_json()
     if not data:
         return jsonify({"error": "No data provided"}), 400
-    allowed_keys = {"end_point", "api_key", "app_dir"}
+    allowed_keys = {"end_point", "api_key", 'app_dir'}
     update_data = {k: v for k, v in data.items() if k in allowed_keys}
     if not update_data:
         return jsonify({"error": "No valid keys provided for update"}), 400
-    if "app_dir" in update_data:
-        app_dir_value = update_data["app_dir"]
+    if 'app_dir' in update_data:
+        app_dir_value = update_data['app_dir']
         if not app_dir_value:
             return jsonify({"error": "app_dir is empty"}), 400
         if not Path(app_dir_value).exists() or not Path(app_dir_value).is_dir():
             return jsonify({"error": f"app_dir '{app_dir_value}' does not exist or is not a directory"}), 400
     updated_config = update_config(update_data)
     # app_dir が更新された場合、新しい app_dir に合わせて docs_lake_dir を更新
-    if "app_dir" in update_data:
-        new_app_dir = Path(updated_config["app_dir"]).resolve()
+    if 'app_dir' in update_data:
+        new_app_dir = Path(updated_config['app_dir']).resolve()
         default_docs_lake_folder = updated_config.get("docs_lake_dir")
         if not default_docs_lake_folder:
             default_docs_lake_folder = "__docs__"

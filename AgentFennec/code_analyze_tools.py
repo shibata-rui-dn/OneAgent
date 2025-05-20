@@ -17,7 +17,7 @@ config = get_config()
 # --------------------------------------------------
 def get_relative_path(absolute_path, base=None):
     if base is None:
-        base = config.get("app_dir", os.path.join(os.getcwd(), "docs/root"))
+        base = config.get('app_dir', os.path.join(os.getcwd(), 'docs/root'))
     try:
         # パスが存在しなかった場合もチェック
         if not os.path.exists(absolute_path):
@@ -461,7 +461,7 @@ def generate_report(analysis_results, dependency_graph):
         report_lines.append(f"### モジュール: {module}")
         if len(entries) == 1:
             entry = entries[0]
-            report_lines.append(f"- パス: {get_relative_path(entry['file_path'], config.get("app_dir", os.path.join(os.getcwd(), "docs/root")))}")
+            report_lines.append(f"- パス: {get_relative_path(entry['file_path'], config.get('app_dir', os.path.join(os.getcwd(), 'docs/root')))}")
             imports_list = [imp['module'] for imp in entry.get('imports', [])[:10]]
             report_lines.append(f"- インポート: {', '.join(imports_list) if imports_list else 'なし'}")
             if len(entry.get('imports', [])) > 10:
@@ -498,7 +498,7 @@ def generate_report(analysis_results, dependency_graph):
                     else:
                         report_lines.append(f"  - {ref_type}による参照: {', '.join(modules)}")
         else:
-            file_paths = [get_relative_path(entry['file_path'], config.get("app_dir", os.path.join(os.getcwd(), "docs/root"))) for entry in entries]
+            file_paths = [get_relative_path(entry['file_path'], config.get('app_dir', os.path.join(os.getcwd(), 'docs/root'))) for entry in entries]
             if len(file_paths) > 3:
                 report_lines.append(f"- パス: {', '.join(file_paths[:3])} (他 {len(file_paths) - 3} 個)")
             else:
@@ -522,7 +522,7 @@ def generate_report(analysis_results, dependency_graph):
 def analyze_file(file_path, analysis_results=None):
     result = {}
     # 基準は常にカレントディレクトリ
-    base = config.get("app_dir", os.path.join(os.getcwd(), "docs/root"))
+    base = config.get('app_dir', os.path.join(os.getcwd(), 'docs/root'))
     if file_path.startswith("./") or file_path.startswith(".\\"):
         file_path = file_path[2:]
     file_path = os.path.join(base, file_path)
@@ -639,7 +639,7 @@ def setup():
     """
 
     config = get_config()
-    project_dir = config.get("app_dir", os.path.join(os.getcwd(), "docs", "root"))
+    project_dir = config.get('app_dir', os.path.join(os.getcwd(), "docs", "root"))
 
     yield "data: " + json.dumps({
         "status": "progress",

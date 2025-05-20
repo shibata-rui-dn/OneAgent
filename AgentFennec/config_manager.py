@@ -21,13 +21,13 @@ def get_config():
     return load_config()
 
 def update_config(new_data):
-    allowed_keys = {"end_point", "api_key", "app_dir"}
+    allowed_keys = {"end_point", "api_key", 'app_dir'}
     with _config_lock:
         config = load_config()
         for key in allowed_keys:
             if key in new_data:
                 # app_dirの場合は正規化する
-                if key == "app_dir":
+                if key == 'app_dir':
                     config[key] = normalize_path(new_data[key])
                 else:
                     config[key] = new_data[key]
