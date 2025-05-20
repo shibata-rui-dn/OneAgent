@@ -39,6 +39,13 @@ async function main() {
     process.exit(1);
   }
 
+  // プロンプト定義の読み込み
+  const t_prompt = await pull("hwchase17/openai-functions-agent");
+  if (!t_prompt) {
+    console.error("Failed to retrieve the prompt.");
+    process.exit(1);
+  }
+
   const app = express();
   app.use(express.json());
 
