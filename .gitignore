@@ -2,7 +2,6 @@
 /build/
 /src/components/old/
 /src/old/
-config.json
 package-lock.json
 /test
 /myMemo
