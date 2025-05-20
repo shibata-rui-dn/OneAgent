@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>エンドポイント テスト ページ</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    h1 { color: #333; }
+    section { margin-bottom: 40px; }
+    pre { background-color: #f4f4f4; padding: 10px; max-height: 300px; overflow: auto; }
+    label { display: inline-block; width: 140px; }
+    input, select, textarea { margin-bottom: 10px; }
+    hr { margin: 30px 0; }
+  </style>
+</head>
+<body>
+  <h1>エンドポイント テスト ページ</h1>
+
+  <!-- POST /update: インデックス更新（ストリームレスポンス） -->
+  <section id="update-index">
+    <h2>POST /update (インデックス更新)</h2>
+    <p>※更新中はdocs_lake_dir内のファイルもインデックスに含まれますが、検索やファイル一覧では元のパスに変換され返却されます。</p>
+    <button id="updateBtn">インデックス更新開始</button>
+    <pre id="updateResult"></pre>
+  </section>
+
+  <hr>
+
+  <!-- GET /suggest: サジェスト -->
+  <section id="suggest">
+    <h2>GET /suggest (サジェスト)</h2>
+    <label for="suggestQuery">クエリ:</label>
+    <input type="text" id="suggestQuery" placeholder="例: test">
+    <button id="suggestBtn">サジェスト取得</button>
+    <pre id="suggestResult"></pre>
+  </section>
+
+  <hr>
+
+  <!-- GET /search: 検索 -->
+  <section id="search">
+    <h2>GET /search (検索)</h2>
+    <p>※docs_lake_dir 内のファイルは検索結果では元のファイルパスとして返却されます（index_type は選択可能）。</p>
+    <label for="searchQuery">クエリ:</label>
+    <input type="text" id="searchQuery" placeholder="例: test">
+    <br>
+    <label for="searchMode">モード:</label>
+    <select id="searchMode">
+      <option value="or">or</option>
+      <option value="and">and</option>
+    </select>
+    <br>
+    <label for="searchLimit">件数:</label>
+    <input type="number" id="searchLimit" value="10" min="1">
+    <br>
+    <label for="searchIndexType">Index Type:</label>
+    <select id="searchIndexType">
+      <option value="other">other</option>
+      <option value="docs">docs</option>
+    </select>
+    <br>
+    <button id="searchBtn">検索実行</button>
+    <pre id="searchResult"></pre>
+  </section>
+
+  <hr>
+
+  <!-- GET /files: ファイル一覧取得 -->
+  <section id="files">
+    <h2>GET /files (ファイル一覧)</h2>
+    <p>※docs_lake_dir 内のファイルは除外され、other のファイルのみが返却されます。</p>
+    <button id="filesBtn">ファイル一覧取得</button>
+    <pre id="filesResult"></pre>
+  </section>
+
+  <hr>
+
+  <!-- GET /file: ファイル内容取得 -->
+  <section id="file-content">
+    <h2>GET /file (ファイル内容取得)</h2>
+    <p>※docs_lake_dir 内のファイルは直接返却されず、xlsx、pdf、docs などの場合はテキスト化済みコンテンツが返されます。</p>
+    <label for="filePath">ファイルパス:</label>
+    <input type="text" id="filePath" placeholder="例: sample.txt">
+    <button id="fileContentBtn">ファイル内容取得</button>
+    <pre id="fileContentResult"></pre>
+  </section>
+
+  <hr>
+
+  <!-- Configエンドポイント（GET /config, POST /config）のテスト -->
+  <section id="config">
+    <h2>Config エンドポイント テスト</h2>
+    <!-- GET /config -->
+    <div id="get-config">
+      <h3>GET /config</h3>
+      <button id="getConfigBtn">Config取得</button>
+      <pre id="getConfigResult"></pre>
+    </div>
+
+    <hr>
+
+    <!-- POST /config -->
+    <div id="update-config">
+      <h3>POST /config (更新)</h3>
+      <form id="updateConfigForm">
+        <div>
+          <label for="end_point">End Point:</label>
+          <input type="text" id="end_point" name="end_point" placeholder="例: http://example.com/api">
+        </div>
+        <div>
+          <label for="api_key">API Key:</label>
+          <input type="text" id="api_key" name="api_key" placeholder="例: your_api_key">
+        </div>
+        <div>
+          <label for="app_dir">App Directory:</label>
+          <input type="text" id="app_dir" name="app_dir" placeholder="例: ./app">
+        </div>
+        <button type="submit">Config更新</button>
+      </form>
+      <pre id="updateConfigResult"></pre>
+    </div>
+  </section>
+
+  <hr>
+
+  <!-- GET /agent_stream: エージェントストリーム -->
+  <section id="agent-stream">
+    <h2>GET /agent_stream (エージェントストリーム)</h2>
+    <label for="agentIssue">障害内容 (issue):</label>
+    <input type="text" id="agentIssue" placeholder="例: サンプル障害">
+    <br>
+    <label for="agentTraceLog">トレースログ (trace_log):</label>
+    <textarea id="agentTraceLog" rows="4" cols="50" placeholder="例: エラー詳細など"></textarea>
+    <br>
+    <label for="agentSearchKeywords">検索キーワード (search_keywords):</label>
+    <input type="text" id="agentSearchKeywords" placeholder="例: キーワード1, キーワード2">
+    <br>
+    <button id="agentStreamBtn">エージェントストリーム開始</button>
+    <pre id="agentStreamResult"></pre>
+  </section>
+
+  <hr>
+
+  <!-- GET /init_status: 初期化ステータス -->
+  <section id="init-status">
+    <h2>GET /init_status (初期化ステータス)</h2>
+    <button id="initStatusBtn">初期化ステータス取得</button>
+    <pre id="initStatusResult"></pre>
+  </section>
+
+  <script>
+    // POST /update のテスト（ストリームを読み出す）
+    document.getElementById('updateBtn').addEventListener('click', async () => {
+      const result = document.getElementById('updateResult');
+      result.textContent = "";
+      try {
+        const response = await fetch('http://localhost:6546/update?force=true', { method: 'POST' });
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder('utf-8');
+        let done = false;
+        while (!done) {
+          const { value, done: doneReading } = await reader.read();
+          done = doneReading;
+          const chunkValue = decoder.decode(value);
+          result.textContent += chunkValue;
+        }
+      } catch (error) {
+        result.textContent = "Error: " + error;
+      }
+    });
+
+    // GET /suggest のテスト
+    document.getElementById('suggestBtn').addEventListener('click', async () => {
+      const query = document.getElementById('suggestQuery').value;
+      const result = document.getElementById('suggestResult');
+      try {
+        const response = await fetch(`http://localhost:6546/suggest?q=${encodeURIComponent(query)}`);
+        const data = await response.json();
+        result.textContent = JSON.stringify(data, null, 2);
+      } catch (error) {
+        result.textContent = "Error: " + error;
+      }
+    });
+
+    // GET /search のテスト
+    document.getElementById('searchBtn').addEventListener('click', async () => {
+      const query = document.getElementById('searchQuery').value;
+      const mode = document.getElementById('searchMode').value;
+      const limit = document.getElementById('searchLimit').value;
+      const indexType = document.getElementById('searchIndexType').value;
+      const result = document.getElementById('searchResult');
+      try {
+        const response = await fetch(`http://localhost:6546/search?q=${encodeURIComponent(query)}&mode=${encodeURIComponent(mode)}&limit=${limit}&index_type=${encodeURIComponent(indexType)}`);
+        const data = await response.json();
+        result.textContent = JSON.stringify(data, null, 2);
+      } catch (error) {
+        result.textContent = "Error: " + error;
+      }
+    });
+
+    // GET /files のテスト（常に index_type=other）
+    document.getElementById('filesBtn').addEventListener('click', async () => {
+      const result = document.getElementById('filesResult');
+      try {
+        const response = await fetch(`http://localhost:6546/files?index_type=other`);
+        const data = await response.json();
+        result.textContent = JSON.stringify(data, null, 2);
+      } catch (error) {
+        result.textContent = "Error: " + error;
+      }
+    });
+
+    // GET /file のテスト（常に other のファイルのみ返却）
+    document.getElementById('fileContentBtn').addEventListener('click', async () => {
+      const filePath = document.getElementById('filePath').value;
+      const result = document.getElementById('fileContentResult');
+      try {
+        const response = await fetch(`http://localhost:6546/file?path=${encodeURIComponent(filePath)}`);
+        const data = await response.json();
+        result.textContent = JSON.stringify(data, null, 2);
+      } catch (error) {
+        result.textContent = "Error: " + error;
+      }
+    });
+
+    // GET /config のテスト
+    document.getElementById('getConfigBtn').addEventListener('click', async () => {
+      const result = document.getElementById('getConfigResult');
+      try {
+        const response = await fetch('http://localhost:6546/config');
+        if (!response.ok) {
+          result.textContent = 'Error: ' + response.statusText;
+          return;
+        }
+        const data = await response.json();
+        result.textContent = JSON.stringify(data, null, 2);
+      } catch (error) {
+        result.textContent = 'Error: ' + error;
+      }
+    });
+
+    // POST /config のテスト
+    document.getElementById('updateConfigForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const payload = {
+        end_point: document.getElementById('end_point').value,
+        api_key: document.getElementById('api_key').value,
+        app_dir: document.getElementById('app_dir').value
+      };
+      const result = document.getElementById('updateConfigResult');
+      try {
+        const response = await fetch('http://localhost:6546/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (!response.ok) {
+          result.textContent = 'Error: ' + response.statusText;
+          return;
+        }
+        const data = await response.json();
+        result.textContent = JSON.stringify(data, null, 2);
+      } catch (error) {
+        result.textContent = 'Error: ' + error;
+      }
+    });
+
+    // GET /agent_stream のテスト（エージェントストリーム）
+    document.getElementById('agentStreamBtn').addEventListener('click', () => {
+      const issue = document.getElementById('agentIssue').value;
+      const traceLog = document.getElementById('agentTraceLog').value;
+      const searchKeywords = document.getElementById('agentSearchKeywords').value;
+      const result = document.getElementById('agentStreamResult');
+      result.textContent = "";
+      if (!issue) {
+        result.textContent = "エラー: 障害内容 (issue) を入力してください。";
+        return;
+      }
+      const url = `http://localhost:6546/agent_stream?issue=${encodeURIComponent(issue)}&trace_log=${encodeURIComponent(traceLog)}&search_keywords=${encodeURIComponent(searchKeywords)}`;
+      const eventSource = new EventSource(url);
+      eventSource.onmessage = function(event) {
+        result.textContent += event.data + "\n";
+      };
+      eventSource.onerror = function(err) {
+        result.textContent += "Error: " + JSON.stringify(err) + "\n";
+        eventSource.close();
+      };
+    });
+
+    // GET /init_status のテスト
+    document.getElementById('initStatusBtn').addEventListener('click', async () => {
+      const result = document.getElementById('initStatusResult');
+      try {
+        const response = await fetch('http://localhost:6546/init_status');
+        const data = await response.json();
+        result.textContent = JSON.stringify(data, null, 2);
+      } catch (error) {
+        result.textContent = 'Error: ' + error;
+      }
+    });
+  </script>
+</body>
+</html>

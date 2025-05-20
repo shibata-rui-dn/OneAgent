@@ -1,0 +1,21 @@
+binary_extensions:
+  - .exe
+  - .dll
+  - .bin
+  - .jpg
+  - .png
+  - .gif
+  - .pdf
+  - .xls
+  - .xlsx
+  - .wav
+  - .mp3
+  - .mp4
+  - .avi
+  - .mov
+  - .wmv
+  - .whl
+  - .zip
+  - .tar
+  - .gz
+  - .bz2

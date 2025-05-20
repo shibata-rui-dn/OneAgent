@@ -1,0 +1,9 @@
+binary_extensions:
+  - .pdf
+  - .xls
+  - .xlsx
+  - .xlsm
+  - .doc
+  - .docx
+  - .odt
+  - .ppt
