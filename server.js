@@ -9,12 +9,12 @@ import { ChatOpenAI } from "@langchain/openai";
 import { createOpenAIFunctionsAgent, AgentExecutor } from "langchain/agents";
 import { Calculator } from "@langchain/community/tools/calculator";
 import { pull } from "langchain/hub";
-import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 4889;
 const CONFIG_PATH = path.join(__dirname, 'config.json');
+const PROMPT_PATH = path.join(__dirname, 'prompt.json');
 
 async function main() {
   // ───────────────────────────────────────────────────────────────────────────────
@@ -24,7 +24,8 @@ async function main() {
     const defaultConfig = {
       end_point: "https://api.openai.com/v1",
       api_key: "",
-      model_name: "gpt-4.1"
+      model_name: "gpt-4.1",
+      isSetPrompt: true
     };
     fs.writeFileSync(CONFIG_PATH, JSON.stringify(defaultConfig, null, 2), 'utf8');
     console.log('Created default config.json');
@@ -39,11 +40,26 @@ async function main() {
     process.exit(1);
   }
 
-  // プロンプト定義の読み込み
-  const t_prompt = await pull("hwchase17/openai-functions-agent");
-  if (!t_prompt) {
-    console.error("Failed to retrieve the prompt.");
-    process.exit(1);
+  // プロンプト定義の読み込み or 取得
+  let t_prompt;
+  if (!config.isSetPrompt) {
+    console.log('Pulling template prompt...');
+    t_prompt = await pull("hwchase17/openai-functions-agent");
+    if (!t_prompt) {
+      console.error("Failed to retrieve the prompt.");
+      process.exit(1);
+    }
+    fs.writeFileSync(PROMPT_PATH, JSON.stringify(t_prompt, null, 2), 'utf8');
+    config.isSetPrompt = true;
+    fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), 'utf8');
+    console.log('Saved prompt.json and updated config.json');
+  } else {
+    if (!fs.existsSync(PROMPT_PATH)) {
+      console.error('prompt.json not found. Please set isSetPrompt to false in config.json to re-pull.');
+      process.exit(1);
+    }
+    t_prompt = JSON.parse(fs.readFileSync(PROMPT_PATH, 'utf8'));
+    console.log('Loaded prompt.json');
   }
 
   const app = express();
@@ -57,6 +73,7 @@ async function main() {
       end_point: z.string().url(),
       api_key: z.string().min(1),
       model_name: z.string().min(1),
+      isSetPrompt: z.boolean().optional()
     });
 
     const result = schema.safeParse(req.body);

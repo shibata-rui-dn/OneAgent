@@ -1,0 +1,108 @@
+{
+  "lc": 1,
+  "type": "constructor",
+  "id": [
+    "langchain_core",
+    "prompts",
+    "chat",
+    "ChatPromptTemplate"
+  ],
+  "kwargs": {
+    "messages": [
+      {
+        "lc": 1,
+        "type": "constructor",
+        "id": [
+          "langchain_core",
+          "prompts",
+          "chat",
+          "SystemMessagePromptTemplate"
+        ],
+        "kwargs": {
+          "prompt": {
+            "lc": 1,
+            "type": "constructor",
+            "id": [
+              "langchain_core",
+              "prompts",
+              "prompt",
+              "PromptTemplate"
+            ],
+            "kwargs": {
+              "template": "You are a helpful assistant",
+              "input_variables": [],
+              "template_format": "f-string"
+            }
+          }
+        }
+      },
+      {
+        "lc": 1,
+        "type": "constructor",
+        "id": [
+          "langchain_core",
+          "prompts",
+          "chat",
+          "MessagesPlaceholder"
+        ],
+        "kwargs": {
+          "optional": true,
+          "variable_name": "chat_history"
+        }
+      },
+      {
+        "lc": 1,
+        "type": "constructor",
+        "id": [
+          "langchain_core",
+          "prompts",
+          "chat",
+          "HumanMessagePromptTemplate"
+        ],
+        "kwargs": {
+          "prompt": {
+            "lc": 1,
+            "type": "constructor",
+            "id": [
+              "langchain_core",
+              "prompts",
+              "prompt",
+              "PromptTemplate"
+            ],
+            "kwargs": {
+              "template": "{input}",
+              "input_variables": [
+                "input"
+              ],
+              "template_format": "f-string"
+            }
+          }
+        }
+      },
+      {
+        "lc": 1,
+        "type": "constructor",
+        "id": [
+          "langchain_core",
+          "prompts",
+          "chat",
+          "MessagesPlaceholder"
+        ],
+        "kwargs": {
+          "optional": false,
+          "variable_name": "agent_scratchpad"
+        }
+      }
+    ],
+    "input_variables": [
+      "agent_scratchpad",
+      "chat_history",
+      "input"
+    ],
+    "metadata": {
+      "lc_hub_owner": "hwchase17",
+      "lc_hub_repo": "openai-functions-agent",
+      "lc_hub_commit_hash": "a1655024b06afbd95d17449f21316291e0726f13dcfaf990cc0d18087ad689a5"
+    }
+  }
+}
