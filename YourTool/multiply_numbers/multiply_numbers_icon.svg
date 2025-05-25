@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Generated icon for multiply_numbers -->
+  <!-- Description: 乗算計算アイコン -->
+  <rect x="4" y="2" width="16" height="20" rx="2" fill="#6EE7B7" stroke="#10B981" stroke-width="2"/>
+  <rect x="6" y="4" width="12" height="3" fill="#10B981" rx="1"/>
+  <line x1="9" y1="11" x2="15" y2="17" stroke="#10B981" stroke-width="2"/>
+  <line x1="15" y1="11" x2="9" y2="17" stroke="#10B981" stroke-width="2"/>
+</svg>

@@ -1,0 +1,52 @@
+{
+  "name": "python_weather_checker",
+  "description": "Pythonを使用して指定された都市の詳細な天気情報を取得します。OpenWeatherMap APIまたはデモデータを使用して、現在の気温、湿度、気圧、風速、視界、雲量、日の出・日の入り時刻などの包括的な気象データを提供します。",
+  "version": "1.0.0",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "city": {
+        "type": "string",
+        "description": "天気を確認したい都市名（例: Tokyo, 東京, New York, London, Paris）"
+      },
+      "api_key": {
+        "type": "string",
+        "description": "OpenWeatherMap API Key（オプション）。設定されていない場合はデモデータを返します。APIキーを使用すると実際のリアルタイム天気データを取得できます。"
+      },
+      "country_code": {
+        "type": "string",
+        "description": "国コード（オプション、例: JP, US, GB, FR）。同名の都市が複数ある場合の識別に使用します。"
+      }
+    },
+    "required": ["city"],
+    "additionalProperties": false
+  },
+  "icon": {
+    "filename": "python_weather_icon.svg",
+    "description": "Python天気情報アイコン",
+    "type": "3",
+    "colorScheme": "blue"
+  },
+  "python": {
+    "script": "weather_api.py",
+    "requirements": ["requests"],
+    "python_version": "3.8+",
+    "functions": [
+      {
+        "name": "weather",
+        "description": "現在の天気情報を取得"
+      },
+      {
+        "name": "forecast",
+        "description": "5日間の天気予報を取得"
+      },
+      {
+        "name": "multi_cities",
+        "description": "複数都市の天気情報を一括取得"
+      }
+    ]
+  },
+  "tags": ["weather", "python", "api", "real-time"],
+  "author": "OneAgent Python Integration",
+  "license": "MIT"
+}

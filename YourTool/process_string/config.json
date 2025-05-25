@@ -1,0 +1,35 @@
+{
+  "name": "process_string",
+  "description": "文字列を処理して、長さや大文字変換などの情報を返します",
+  "version": "1.0.0",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "text": {
+        "type": "string",
+        "description": "処理対象の文字列"
+      },
+      "operation": {
+        "type": "string",
+        "enum": [
+          "length",
+          "uppercase",
+          "lowercase",
+          "reverse"
+        ],
+        "description": "実行する操作"
+      }
+    },
+    "required": [
+      "text",
+      "operation"
+    ],
+    "additionalProperties": false
+  },
+  "icon": {
+    "filename": "process_string_icon.svg",
+    "description": "文字列処理アイコン",
+    "type": "4",
+    "colorScheme": "orange"
+  }
+}

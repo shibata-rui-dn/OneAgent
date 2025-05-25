@@ -1,0 +1,29 @@
+{
+  "name": "add_numbers",
+  "description": "2つの数値を受け取って、その和を返します",
+  "version": "1.0.0",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "a": {
+        "type": "number",
+        "description": "最初の数値"
+      },
+      "b": {
+        "type": "number",
+        "description": "2番目の数値"
+      }
+    },
+    "required": [
+      "a",
+      "b"
+    ],
+    "additionalProperties": false
+  },
+  "icon": {
+    "filename": "add_numbers_icon.svg",
+    "description": "加算計算アイコン",
+    "type": "6",
+    "colorScheme": "blue"
+  }
+}

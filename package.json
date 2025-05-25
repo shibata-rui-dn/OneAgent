@@ -1,0 +1,45 @@
+{
+  "name": "dynamic-tool-mcp-agent",
+  "version": "1.0.0",
+  "description": "動的ツール管理MCP対応サーバー（HTTP版）+ AIエージェント機能",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node test.js",
+    "test-agent": "node test-agent.js",
+    "health": "curl http://localhost:3000/health",
+    "info": "curl http://localhost:3000/info",
+    "tools": "curl http://localhost:3000/tools",
+    "reload": "curl -X POST http://localhost:3000/tools/reload",
+    "create-tool": "node create-tool.js"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "ai",
+    "agent",
+    "tools",
+    "openai",
+    "azure-openai",
+    "http",
+    "api"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.0.0",
+    "express": "^4.18.0",
+    "node-fetch": "^3.3.0",
+    "openai": "^4.103.0"
+  },
+  "devDependencies": {
+    "node-fetch": "^3.3.2"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}

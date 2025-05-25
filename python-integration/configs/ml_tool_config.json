@@ -1,0 +1,142 @@
+{
+  "name": "python_ml_analyzer",
+  "description": "Pythonを使用した包括的な機械学習分析ツール。線形回帰による予測、K-meansクラスタリング、時系列分析、異常値検出などの高度な機械学習機能を提供します。データの前処理から可視化まで、データサイエンスワークフローをサポートします。",
+  "version": "1.0.0",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "data": {
+        "type": "array",
+        "description": "分析対象のデータ。JSON形式のオブジェクト配列。例: [{\"x\":1,\"y\":2},{\"x\":2,\"y\":4}]",
+        "minItems": 2
+      },
+      "analysis_type": {
+        "type": "string",
+        "enum": ["predict", "cluster", "timeseries", "anomaly"],
+        "description": "実行する分析の種類。predict=予測分析, cluster=クラスタリング, timeseries=時系列分析, anomaly=異常値検出",
+        "default": "predict"
+      },
+      "target_column": {
+        "type": "string",
+        "description": "予測対象の列名（予測分析時）。指定されない場合は最後の列を使用"
+      },
+      "date_column": {
+        "type": "string",
+        "description": "日付列名（時系列分析時）。指定されない場合は自動検出"
+      },
+      "value_column": {
+        "type": "string",
+        "description": "値列名（時系列分析時）。指定されない場合は数値列を自動選択"
+      },
+      "n_clusters": {
+        "type": "integer",
+        "description": "クラスター数（クラスタリング分析時）",
+        "default": 3,
+        "minimum": 2,
+        "maximum": 20
+      },
+      "algorithm": {
+        "type": "string",
+        "enum": ["kmeans", "dbscan"],
+        "description": "クラスタリングアルゴリズム",
+        "default": "kmeans"
+      },
+      "method": {
+        "type": "string",
+        "enum": ["zscore", "iqr", "isolation"],
+        "description": "異常値検出手法",
+        "default": "zscore"
+      },
+      "threshold": {
+        "type": "number",
+        "description": "異常値検出閾値",
+        "default": 2.5,
+        "minimum": 1.0,
+        "maximum": 5.0
+      },
+      "forecast_periods": {
+        "type": "integer",
+        "description": "予測期間数（時系列分析時）",
+        "default": 5,
+        "minimum": 1,
+        "maximum": 30
+      }
+    },
+    "required": ["data", "analysis_type"],
+    "additionalProperties": false
+  },
+  "icon": {
+    "filename": "python_ml_icon.svg",
+    "description": "Python機械学習アイコン",
+    "type": "2",
+    "colorScheme": "purple"
+  },
+  "python": {
+    "script": "ml_analysis.py",
+    "requirements": ["numpy", "pandas", "scikit-learn", "scipy"],
+    "python_version": "3.8+",
+    "functions": [
+      {
+        "name": "predict",
+        "description": "線形回帰による予測分析",
+        "parameters": ["data", "target_column"]
+      },
+      {
+        "name": "cluster",
+        "description": "K-meansまたはDBSCANクラスタリング",
+        "parameters": ["data", "n_clusters", "algorithm"]
+      },
+      {
+        "name": "timeseries",
+        "description": "時系列分析と予測",
+        "parameters": ["data", "date_column", "value_column", "forecast_periods"]
+      },
+      {
+        "name": "anomaly",
+        "description": "異常値検出",
+        "parameters": ["data", "method", "threshold"]
+      }
+    ]
+  },
+  "capabilities": [
+    "線形回帰予測（R²スコア、MSE評価）",
+    "K-means・DBSCANクラスタリング",
+    "時系列分析・トレンド検出",
+    "異常値検出（Z-score・IQR・Isolation Forest）",
+    "データ前処理・特徴量選択",
+    "統計分析・可視化データ出力",
+    "予測信頼区間計算",
+    "クラスター統計・中心点計算"
+  ],
+  "use_cases": [
+    "売上予測・需要予測",
+    "顧客セグメンテーション",
+    "株価・時系列データ分析",
+    "品質管理・異常検知",
+    "マーケットバスケット分析",
+    "A/Bテスト結果分析"
+  ],
+  "data_format_examples": {
+    "predict": [
+      {"temperature": 25, "humidity": 60, "sales": 1200},
+      {"temperature": 30, "humidity": 55, "sales": 1500}
+    ],
+    "cluster": [
+      {"age": 25, "income": 50000, "spending": 2000},
+      {"age": 45, "income": 80000, "spending": 3000}
+    ],
+    "timeseries": [
+      {"date": "2024-01-01", "value": 100},
+      {"date": "2024-01-02", "value": 105}
+    ],
+    "anomaly": [1, 2, 3, 100, 5, 6, 7]
+  },
+  "performance": {
+    "max_data_points": 10000,
+    "typical_execution_time": "1-10秒",
+    "memory_usage": "中程度"
+  },
+  "tags": ["machine-learning", "prediction", "clustering", "timeseries", "anomaly-detection", "python", "scikit-learn"],
+  "author": "OneAgent Python Integration",
+  "license": "MIT"
+}

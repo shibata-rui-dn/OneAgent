@@ -1,0 +1,83 @@
+{
+  "name": "python_text_analyzer",
+  "description": "Pythonを使用した高度なテキスト分析ツール。感情分析（ポジティブ/ネガティブ/中性の判定）、キーワード抽出、テキスト要約、類似度計算、統計分析など、自然言語処理の包括的な機能を提供します。日本語と英語の両方に対応しています。",
+  "version": "1.0.0",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "text": {
+        "type": "string",
+        "description": "分析対象のテキスト。日本語または英語のテキストを入力してください。"
+      },
+      "analysis_type": {
+        "type": "string",
+        "enum": ["sentiment", "keywords", "summary", "statistics", "all"],
+        "description": "実行する分析の種類。sentiment=感情分析, keywords=キーワード抽出, summary=要約, statistics=統計分析, all=すべて実行",
+        "default": "sentiment"
+      },
+      "max_keywords": {
+        "type": "integer",
+        "description": "抽出するキーワードの最大数（キーワード分析時）",
+        "default": 10,
+        "minimum": 1,
+        "maximum": 50
+      },
+      "sentence_count": {
+        "type": "integer",
+        "description": "要約で生成する文章数（要約分析時）",
+        "default": 3,
+        "minimum": 1,
+        "maximum": 10
+      }
+    },
+    "required": ["text"],
+    "additionalProperties": false
+  },
+  "icon": {
+    "filename": "python_text_icon.svg",
+    "description": "Pythonテキスト分析アイコン",
+    "type": "4",
+    "colorScheme": "green"
+  },
+  "python": {
+    "script": "text_analyzer.py",
+    "requirements": ["nltk", "textblob", "mecab-python3"],
+    "optional_requirements": ["mecab-python3"],
+    "python_version": "3.8+",
+    "functions": [
+      {
+        "name": "sentiment",
+        "description": "感情分析（ポジティブ/ネガティブ/中性）"
+      },
+      {
+        "name": "keywords",
+        "description": "キーワード抽出と頻度分析"
+      },
+      {
+        "name": "summary",
+        "description": "テキスト要約"
+      },
+      {
+        "name": "similarity",
+        "description": "テキスト間類似度計算"
+      },
+      {
+        "name": "statistics",
+        "description": "テキスト統計分析"
+      }
+    ]
+  },
+  "capabilities": [
+    "日本語・英語対応",
+    "感情分析（信頼度付き）",
+    "キーワード抽出・分類",
+    "自動要約",
+    "類似度計算",
+    "詳細統計分析",
+    "語彙豊富度分析",
+    "読みやすさ評価"
+  ],
+  "tags": ["text-analysis", "nlp", "python", "sentiment", "keywords", "summary"],
+  "author": "OneAgent Python Integration",
+  "license": "MIT"
+}

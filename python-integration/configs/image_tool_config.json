@@ -1,0 +1,204 @@
+{
+  "name": "python_image_processor",
+  "description": "Pythonを使用した高度な画像処理ツール。画像のリサイズ、フィルター適用、フォーマット変換、詳細分析など、包括的な画像処理機能を提供します。PIL（Pillow）とOpenCVを活用して、プロ品質の画像処理を実現します。",
+  "version": "1.0.0",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "image_path": {
+        "type": "string",
+        "description": "処理対象の画像ファイルパス。サポート形式: JPEG, PNG, BMP, TIFF, WEBP"
+      },
+      "function": {
+        "type": "string",
+        "enum": ["resize", "filter", "analyze", "convert"],
+        "description": "実行する画像処理機能。resize=リサイズ, filter=フィルター適用, analyze=画像分析, convert=フォーマット変換"
+      },
+      "output_path": {
+        "type": "string",
+        "description": "出力ファイルパス（オプション）。指定されない場合は自動生成"
+      },
+      "width": {
+        "type": "integer",
+        "description": "リサイズ後の幅（ピクセル）",
+        "minimum": 1,
+        "maximum": 8192
+      },
+      "height": {
+        "type": "integer",
+        "description": "リサイズ後の高さ（ピクセル）",
+        "minimum": 1,
+        "maximum": 8192
+      },
+      "maintain_aspect": {
+        "type": "boolean",
+        "description": "アスペクト比を維持するか",
+        "default": true
+      },
+      "filter_type": {
+        "type": "string",
+        "enum": ["blur", "sharpen", "edge", "emboss", "smooth", "contrast", "brightness", "color"],
+        "description": "適用するフィルタータイプ"
+      },
+      "intensity": {
+        "type": "number",
+        "description": "フィルター強度",
+        "default": 1.0,
+        "minimum": 0.1,
+        "maximum": 5.0
+      },
+      "target_format": {
+        "type": "string",
+        "enum": ["JPEG", "PNG", "BMP", "TIFF", "WEBP"],
+        "description": "変換先フォーマット"
+      },
+      "quality": {
+        "type": "integer",
+        "description": "JPEG品質（1-100）",
+        "default": 95,
+        "minimum": 1,
+        "maximum": 100
+      }
+    },
+    "required": ["image_path", "function"],
+    "additionalProperties": false,
+    "if": {
+      "properties": { "function": { "const": "resize" } }
+    },
+    "then": {
+      "anyOf": [
+        { "required": ["width"] },
+        { "required": ["height"] },
+        { "required": ["width", "height"] }
+      ]
+    },
+    "else": {
+      "if": {
+        "properties": { "function": { "const": "filter" } }
+      },
+      "then": {
+        "required": ["filter_type"]
+      },
+      "else": {
+        "if": {
+          "properties": { "function": { "const": "convert" } }
+        },
+        "then": {
+          "required": ["target_format"]
+        }
+      }
+    }
+  },
+  "icon": {
+    "filename": "python_image_icon.svg",
+    "description": "Python画像処理アイコン",
+    "type": "4",
+    "colorScheme": "red"
+  },
+  "python": {
+    "script": "image_processor.py",
+    "requirements": ["Pillow", "opencv-python", "numpy"],
+    "optional_requirements": ["opencv-python"],
+    "python_version": "3.8+",
+    "functions": [
+      {
+        "name": "resize",
+        "description": "画像のリサイズ（アスペクト比維持・調整可能）",
+        "parameters": ["image_path", "width", "height", "maintain_aspect", "output_path"]
+      },
+      {
+        "name": "filter",
+        "description": "各種フィルターの適用",
+        "parameters": ["image_path", "filter_type", "intensity", "output_path"],
+        "supported_filters": ["blur", "sharpen", "edge", "emboss", "smooth", "contrast", "brightness", "color"]
+      },
+      {
+        "name": "analyze",
+        "description": "画像の詳細分析（メタデータ、色彩、品質評価）",
+        "parameters": ["image_path"]
+      },
+      {
+        "name": "convert",
+        "description": "画像フォーマット変換",
+        "parameters": ["image_path", "target_format", "output_path", "quality"]
+      }
+    ]
+  },
+  "capabilities": [
+    "高品質リサイズ（Lanczos補間）",
+    "多様なフィルター（ぼかし、シャープ、エッジ検出など）",
+    "フォーマット変換（JPEG, PNG, BMP, TIFF, WEBP）",
+    "EXIF メタデータ抽出",
+    "色彩分析・ヒストグラム生成",
+    "画像品質評価・解像度判定",
+    "主要色・カラーパレット抽出",
+    "OpenCV連携（高度な画像処理）",
+    "シャープネス・エッジ密度分析",
+    "バッチ処理対応"
+  ],
+  "supported_formats": {
+    "input": ["JPEG", "PNG", "BMP", "TIFF", "WEBP", "GIF"],
+    "output": ["JPEG", "PNG", "BMP", "TIFF", "WEBP"]
+  },
+  "filter_details": {
+    "blur": "ガウシアンぼかしフィルター（intensity: 半径）",
+    "sharpen": "シャープネス強化（intensity: 強度倍率）",
+    "edge": "エッジ検出（Canny法対応、intensity: 閾値倍率）",
+    "emboss": "エンボス効果（立体感を付与）",
+    "smooth": "スムージングフィルター（ノイズ除去）",
+    "contrast": "コントラスト調整（intensity: 倍率）",
+    "brightness": "明度調整（intensity: 倍率）",
+    "color": "彩度調整（intensity: 倍率）"
+  },
+  "use_cases": [
+    "Webサイト用画像最適化",
+    "SNS投稿用リサイズ・フィルター",
+    "印刷用高解像度変換",
+    "画像品質チェック・分析",
+    "バッチ画像処理",
+    "フォーマット一括変換",
+    "写真の色彩分析",
+    "画像メタデータ抽出"
+  ],
+  "performance": {
+    "max_image_size": "8192 x 8192 ピクセル",
+    "typical_processing_time": "0.1-5秒（画像サイズ・処理内容により変動）",
+    "memory_usage": "画像サイズに比例",
+    "supported_color_depths": ["8bit", "16bit", "24bit", "32bit"],
+    "gpu_acceleration": "OpenCV使用時は部分的に対応"
+  },
+  "quality_features": {
+    "resampling_algorithm": "Lanczos（高品質）",
+    "color_preservation": "sRGB色空間対応",
+    "metadata_preservation": "EXIF情報の読み取り・分析",
+    "transparency_support": "PNG・WEBP透明度対応",
+    "lossless_operations": "必要に応じて可逆処理"
+  },
+  "tags": ["image-processing", "computer-vision", "resize", "filter", "convert", "analysis", "python", "pillow", "opencv"],
+  "author": "OneAgent Python Integration",
+  "license": "MIT",
+  "documentation": {
+    "examples": [
+      {
+        "name": "画像リサイズ",
+        "description": "アスペクト比を維持して幅300pxにリサイズ",
+        "input": {"image_path": "photo.jpg", "function": "resize", "width": 300}
+      },
+      {
+        "name": "ぼかしフィルター",
+        "description": "強度2.0でぼかし効果を適用",
+        "input": {"image_path": "photo.jpg", "function": "filter", "filter_type": "blur", "intensity": 2.0}
+      },
+      {
+        "name": "画像分析",
+        "description": "画像の詳細分析とメタデータ抽出",
+        "input": {"image_path": "photo.jpg", "function": "analyze"}
+      },
+      {
+        "name": "フォーマット変換",
+        "description": "JPEG品質90でPNG形式に変換",
+        "input": {"image_path": "photo.png", "function": "convert", "target_format": "JPEG", "quality": 90}
+      }
+    ]
+  }
+}
