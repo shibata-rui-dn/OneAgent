@@ -280,10 +280,6 @@ export default async function yourCustomTool(args) {
     },
     "required": ["param1", "param2"],
     "additionalProperties": false
-  },
-  "icon": {
-    "filename": "sample_icon.svg(別途作成してください)",
-    "description": "説明を追加してください",
   }
 }
 ```

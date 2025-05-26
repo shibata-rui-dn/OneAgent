@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * 動的ツール管理MCP対応サーバー（HTTP版）+ AIエージェント機能 + アイコン対応 + ローカルLLM対応
+ * 動的ツール管理MCP対応サーバー（HTTP版）+ AIエージェント機能 + アイコン対応 + ローカルLLM対応 + .env管理機能
  * 最新MCP SDK v1.12.0対応
 */
 
@@ -12,6 +12,7 @@ import express from "express";
 import cors from "cors";
 import { randomUUID } from "node:crypto";
 import fs from 'fs/promises';
+import { existsSync, readFileSync, writeFileSync, copyFileSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import OpenAI from 'openai';
@@ -44,7 +45,7 @@ let openai;
 
 function initializeOpenAI() {
   const provider = AI_CONFIG.provider.toLowerCase();
-  
+
   try {
     let config = {
       timeout: 60000,
@@ -67,12 +68,12 @@ function initializeOpenAI() {
         const azureApiKey = process.env.OPENAI_API_KEY;
         const azureEndpoint = process.env.AZURE_OPENAI_ENDPOINT;
         const azureApiVersion = process.env.AZURE_OPENAI_API_VERSION || '2024-02-15-preview';
-        
+
         if (!azureApiKey || !azureEndpoint) {
           console.error('❌ Azure OpenAI使用時は OPENAI_API_KEY と AZURE_OPENAI_ENDPOINT が必要です');
           return null;
         }
-        
+
         config.apiKey = azureApiKey;
         config.baseURL = `${azureEndpoint}/openai/deployments/${AI_CONFIG.model}`;
         config.defaultQuery = { 'api-version': azureApiVersion };
@@ -85,13 +86,13 @@ function initializeOpenAI() {
       case 'localllm':
         // ローカルLLM（VLLM）設定
         const localLlmUrl = AI_CONFIG.localLlmUrl;
-        
+
         console.log(`🔄 ローカルLLMに接続中: ${localLlmUrl}`);
-        
+
         // VLLMはOpenAI互換APIを提供するため、baseURLを変更するだけ
         config.baseURL = `${localLlmUrl}/v1`;
         config.apiKey = 'dummy-key'; // VLLMではAPI keyは不要だが、OpenAIクライアントでは必須なのでダミーを設定
-        
+
         // ローカルLLMの場合、タイムアウトを長めに設定
         config.timeout = 120000; // 2分
         break;
@@ -102,16 +103,16 @@ function initializeOpenAI() {
     }
 
     const client = new OpenAI(config);
-    
+
     console.log(`✅ ${provider.toUpperCase()} クライアントを初期化しました`);
     console.log(`   モデル: ${AI_CONFIG.model}`);
     console.log(`   ストリーミング: ${AI_CONFIG.streaming}`);
-    
+
     if (provider === 'localllm') {
       console.log(`   エンドポイント: ${AI_CONFIG.localLlmUrl}`);
       console.log(`   VLLMモデル: ${AI_CONFIG.localLlmModel}`);
     }
-    
+
     return client;
   } catch (error) {
     console.error(`❌ ${provider.toUpperCase()} クライアント初期化エラー:`, error.message);
@@ -138,7 +139,7 @@ class ToolManager {
     }
 
     console.log(`🔍 ツールディレクトリをスキャンしています: ${TOOLS_DIR}`);
-    
+
     const entries = await fs.readdir(TOOLS_DIR, { withFileTypes: true });
     const toolDirs = entries.filter(entry => entry.isDirectory());
 
@@ -202,7 +203,7 @@ class ToolManager {
       }
 
       const handler = this.toolHandlers.get(toolName);
-      
+
       if (typeof handler !== 'function') {
         throw new Error(`ツール「${toolName}」のハンドラーが正しく定義されていません`);
       }
@@ -312,7 +313,7 @@ class ToolManager {
     // 加算ツール（アイコン付き）
     const addToolDir = path.join(TOOLS_DIR, 'add_numbers');
     await fs.mkdir(addToolDir, { recursive: true });
-    
+
     await fs.writeFile(
       path.join(addToolDir, 'config.json'),
       JSON.stringify({
@@ -374,11 +375,11 @@ class ToolManager {
     // 乗算ツール（アイコン付き）
     const multiplyToolDir = path.join(TOOLS_DIR, 'multiply_numbers');
     await fs.mkdir(multiplyToolDir, { recursive: true });
-    
+
     await fs.writeFile(
       path.join(multiplyToolDir, 'config.json'),
       JSON.stringify({
-        name: "multiply_numbers", 
+        name: "multiply_numbers",
         description: "2つの数値を受け取って、その積を返します",
         version: "1.0.0",
         inputSchema: {
@@ -436,7 +437,7 @@ class ToolManager {
     // 文字列処理ツール（アイコン付き）
     const stringToolDir = path.join(TOOLS_DIR, 'process_string');
     await fs.mkdir(stringToolDir, { recursive: true });
-    
+
     await fs.writeFile(
       path.join(stringToolDir, 'config.json'),
       JSON.stringify({
@@ -447,10 +448,10 @@ class ToolManager {
           type: "object",
           properties: {
             text: { type: "string", description: "処理対象の文字列" },
-            operation: { 
-              type: "string", 
+            operation: {
+              type: "string",
               enum: ["length", "uppercase", "lowercase", "reverse"],
-              description: "実行する操作" 
+              description: "実行する操作"
             }
           },
           required: ["text", "operation"],
@@ -568,10 +569,10 @@ class AIAgent {
 
     // 選択されたツールのOpenAI定義を取得
     const availableTools = this.toolManager.getSelectedOpenAITools(selectedTools);
-    
+
     // システムプロンプトを動的に生成（ローカルLLM用に調整）
     let systemPrompt = `あなたは親切なAIアシスタントです。`;
-    
+
     if (availableTools.length > 0) {
       systemPrompt += `利用可能なツールを使って、ユーザーの質問に適切に答えてください。
 
@@ -616,25 +617,25 @@ ${availableTools.map(tool => `- ${tool.function.name}: ${tool.function.descripti
       console.log(`モデル: ${requestParams.model}`);
 
       const completion = await this.openai.chat.completions.create(requestParams);
-      
+
       let toolCalls = [];
       let hasContent = false;
-      
+
       for await (const chunk of completion) {
         const delta = chunk.choices?.[0]?.delta;
         const finishReason = chunk.choices?.[0]?.finish_reason;
-        
+
         if (!delta) continue;
 
         if (delta.content) {
           hasContent = true;
           yield { type: 'text', content: delta.content };
         }
-        
+
         if (delta.tool_calls) {
           for (const toolCallDelta of delta.tool_calls) {
             const index = toolCallDelta.index;
-            
+
             if (index !== undefined) {
               if (!toolCalls[index]) {
                 toolCalls[index] = {
@@ -643,13 +644,13 @@ ${availableTools.map(tool => `- ${tool.function.name}: ${tool.function.descripti
                   function: { name: '', arguments: '' }
                 };
               }
-              
+
               const currentToolCall = toolCalls[index];
-              
+
               if (toolCallDelta.id) {
                 currentToolCall.id = toolCallDelta.id;
               }
-              
+
               if (toolCallDelta.function) {
                 if (toolCallDelta.function.name) {
                   currentToolCall.function.name += toolCallDelta.function.name;
@@ -661,55 +662,55 @@ ${availableTools.map(tool => `- ${tool.function.name}: ${tool.function.descripti
             }
           }
         }
-        
+
         if (finishReason === 'tool_calls' && toolCalls.length > 0) {
           yield { type: 'tool_calls_start' };
-          
+
           const toolMessages = [];
-          
+
           for (const toolCall of toolCalls) {
             if (!toolCall.function.name) continue;
 
             try {
-              yield { 
-                type: 'tool_call_start', 
+              yield {
+                type: 'tool_call_start',
                 tool_name: toolCall.function.name,
-                tool_args: toolCall.function.arguments 
+                tool_args: toolCall.function.arguments
               };
-              
+
               let args = {};
               try {
                 args = JSON.parse(toolCall.function.arguments || '{}');
               } catch (parseError) {
                 throw new Error(`引数のJSONパースエラー: ${parseError.message}`);
               }
-              
+
               const result = await this.toolManager.executeToolHandler(toolCall.function.name, args);
               const resultText = result.content?.map(c => c.text).join('\n') || 'ツール実行完了';
-              
-              yield { 
-                type: 'tool_call_result', 
+
+              yield {
+                type: 'tool_call_result',
                 tool_name: toolCall.function.name,
-                result: resultText 
+                result: resultText
               };
-              
+
               toolMessages.push({
                 role: 'tool',
                 tool_call_id: toolCall.id,
                 content: resultText
               });
-              
+
             } catch (error) {
               console.error(`ツール実行エラー ${toolCall.function.name}:`, error);
-              
+
               const errorMessage = `エラー: ${error.message}`;
-              
-              yield { 
-                type: 'tool_call_error', 
+
+              yield {
+                type: 'tool_call_error',
                 tool_name: toolCall.function.name,
-                error: errorMessage 
+                error: errorMessage
               };
-              
+
               toolMessages.push({
                 role: 'tool',
                 tool_call_id: toolCall.id,
@@ -717,9 +718,9 @@ ${availableTools.map(tool => `- ${tool.function.name}: ${tool.function.descripti
               });
             }
           }
-          
+
           yield { type: 'tool_calls_end' };
-          
+
           if (toolMessages.length > 0) {
             try {
               const followUpMessages = [
@@ -738,7 +739,7 @@ ${availableTools.map(tool => `- ${tool.function.name}: ${tool.function.descripti
                 },
                 ...toolMessages
               ];
-              
+
               const followUpParams = {
                 model: requestParams.model,
                 messages: followUpMessages,
@@ -746,37 +747,37 @@ ${availableTools.map(tool => `- ${tool.function.name}: ${tool.function.descripti
                 max_tokens: requestParams.max_tokens,
                 stream: true
               };
-              
+
               // フォローアップにもツール設定を引き継ぎ
               if (requestParams.tools) {
                 followUpParams.tools = requestParams.tools;
                 followUpParams.tool_choice = 'auto';
               }
-              
+
               const followUpCompletion = await this.openai.chat.completions.create(followUpParams);
-              
+
               for await (const followUpChunk of followUpCompletion) {
                 const followUpDelta = followUpChunk.choices?.[0]?.delta;
                 if (followUpDelta?.content) {
                   yield { type: 'text', content: followUpDelta.content };
                 }
               }
-              
+
             } catch (followUpError) {
               console.error('フォローアップリクエストエラー:', followUpError);
-              yield { 
-                type: 'text', 
-                content: `\n\n[ツール実行は完了しましたが、最終応答の生成でエラーが発生しました: ${followUpError.message}]` 
+              yield {
+                type: 'text',
+                content: `\n\n[ツール実行は完了しましたが、最終応答の生成でエラーが発生しました: ${followUpError.message}]`
               };
             }
           }
         }
       }
-      
+
       if (!hasContent && toolCalls.length === 0) {
         yield { type: 'text', content: 'すみません、適切な回答を生成できませんでした。' };
       }
-      
+
     } catch (error) {
       console.error('ストリーミング処理エラー:', error);
       yield { type: 'error', content: `ストリーミングエラー: ${error.message}` };
@@ -787,28 +788,28 @@ ${availableTools.map(tool => `- ${tool.function.name}: ${tool.function.descripti
     try {
       console.log(`非ストリーミングリクエスト (${AI_CONFIG.provider.toUpperCase()}) - 使用可能ツール数: ${requestParams.tools ? requestParams.tools.length : 0}`);
       console.log(`モデル: ${requestParams.model}`);
-      
+
       const response = await this.openai.chat.completions.create(requestParams);
       const message = response.choices[0].message;
-      
+
       let result = {
         type: 'response',
         content: message.content || '',
         tool_calls: []
       };
-      
+
       if (message.tool_calls && message.tool_calls.length > 0) {
         for (const toolCall of message.tool_calls) {
           try {
             const args = JSON.parse(toolCall.function.arguments);
             const toolResult = await this.toolManager.executeToolHandler(toolCall.function.name, args);
-            
+
             result.tool_calls.push({
               name: toolCall.function.name,
               arguments: args,
               result: toolResult.content.map(c => c.text).join('\n')
             });
-            
+
           } catch (error) {
             result.tool_calls.push({
               name: toolCall.function.name,
@@ -817,7 +818,7 @@ ${availableTools.map(tool => `- ${tool.function.name}: ${tool.function.descripti
             });
           }
         }
-        
+
         const followUpMessages = [
           ...requestParams.messages,
           message,
@@ -827,20 +828,20 @@ ${availableTools.map(tool => `- ${tool.function.name}: ${tool.function.descripti
             content: result.tool_calls[index].result || result.tool_calls[index].error
           }))
         ];
-        
+
         const followUpParams = {
           ...requestParams,
           messages: followUpMessages,
           stream: false
         };
-        
+
         const followUpResponse = await this.openai.chat.completions.create(followUpParams);
-        
+
         result.content = followUpResponse.choices[0].message.content || '';
       }
-      
+
       return result;
-      
+
     } catch (error) {
       return {
         type: 'error',
@@ -881,7 +882,7 @@ function createMcpServer() {
           return {
             content: [
               {
-                type: "text", 
+                type: "text",
                 text: `エラー: ${error.message}`
               }
             ],
@@ -900,19 +901,19 @@ async function main() {
   await toolManager.loadTools();
 
   const app = express();
-  
+
   app.use(cors({
     origin: true,
     credentials: true
   }));
-  
+
   app.use(express.json({ limit: '50mb' }));
   app.use(express.urlencoded({ extended: true, limit: '50mb' }));
-  
+
   // ヘルスチェックエンドポイント
   app.get('/health', (req, res) => {
-    res.json({ 
-      status: 'ok', 
+    res.json({
+      status: 'ok',
       name: 'dynamic-tool-mcp-http',
       version: '1.0.0',
       timestamp: new Date().toISOString(),
@@ -927,7 +928,7 @@ async function main() {
       } : null
     });
   });
-  
+
   // ツール一覧エンドポイント（アイコン情報含む）
   app.get('/tools', (req, res) => {
     res.json({
@@ -941,13 +942,13 @@ async function main() {
     try {
       const { toolName } = req.params;
       const iconData = await toolManager.getToolIcon(toolName);
-      
+
       if (!iconData) {
         return res.status(404).json({
           error: 'アイコンが見つかりません'
         });
       }
-      
+
       res.setHeader('Content-Type', iconData.contentType);
       res.setHeader('Cache-Control', 'public, max-age=3600'); // 1時間キャッシュ
       res.send(iconData.data);
@@ -959,7 +960,7 @@ async function main() {
       });
     }
   });
-  
+
   // ツールリロードエンドポイント
   app.post('/tools/reload', async (req, res) => {
     try {
@@ -1023,21 +1024,21 @@ async function main() {
         res.setHeader('Content-Type', 'text/plain; charset=utf-8');
         res.setHeader('Cache-Control', 'no-cache');
         res.setHeader('Connection', 'keep-alive');
-        
+
         const stream = aiAgent.processQuery(query, options);
-        
+
         for await (const chunk of stream) {
           res.write(`data: ${JSON.stringify(chunk)}\n\n`);
         }
-        
+
         res.write('data: {"type": "end"}\n\n');
         res.end();
-        
+
       } else {
         const result = await aiAgent.processQuery(query, options);
         res.json(result);
       }
-      
+
     } catch (error) {
       console.error('Agent error:', error);
       if (options.streaming) {
@@ -1067,7 +1068,7 @@ async function main() {
   // AI設定更新エンドポイント
   app.post('/agent/config', (req, res) => {
     const { provider, model, streaming, temperature, maxTokens, localLlmUrl, localLlmModel } = req.body;
-    
+
     if (provider && ['openai', 'azureopenai', 'localllm'].includes(provider)) {
       AI_CONFIG.provider = provider;
     }
@@ -1077,7 +1078,7 @@ async function main() {
     if (maxTokens !== undefined) AI_CONFIG.maxTokens = maxTokens;
     if (localLlmUrl) AI_CONFIG.localLlmUrl = localLlmUrl;
     if (localLlmModel) AI_CONFIG.localLlmModel = localLlmModel;
-    
+
     res.json({
       status: 'success',
       message: 'AI設定を更新しました',
@@ -1085,13 +1086,252 @@ async function main() {
       note: 'プロバイダーを変更した場合はサーバーの再起動が必要です'
     });
   });
-  
+
+  // .env管理エンドポイント
+
+  // 現在の.env内容を取得
+  app.get('/env', (req, res) => {
+    try {
+      const envPath = path.join(__dirname, '.env');
+
+      // .envファイルが存在するかチェック
+      if (!existsSync(envPath)) {
+        return res.json({
+          exists: false,
+          content: '',
+          variables: {}
+        });
+      }
+
+      const envContent = readFileSync(envPath, 'utf8');
+
+      // 環境変数をパースして返す（機密情報をマスク）
+      const variables = {};
+      const lines = envContent.split('\n');
+
+      lines.forEach(line => {
+        const trimmedLine = line.trim();
+        if (trimmedLine && !trimmedLine.startsWith('#')) {
+          const [key, ...valueParts] = trimmedLine.split('=');
+          if (key && valueParts.length > 0) {
+            const value = valueParts.join('=');
+
+            // API キーなどの機密情報をマスク
+            if (key.includes('API_KEY') || key.includes('KEY')) {
+              variables[key] = value ? '***MASKED***' : '';
+            } else {
+              variables[key] = value;
+            }
+          }
+        }
+      });
+
+      res.json({
+        exists: true,
+        content: envContent,
+        variables: variables,
+        currentConfig: {
+          AI_PROVIDER: process.env.AI_PROVIDER,
+          AI_MODEL: process.env.AI_MODEL,
+          AI_TEMPERATURE: process.env.AI_TEMPERATURE,
+          AI_STREAMING: process.env.AI_STREAMING,
+          LOCAL_LLM_URL: process.env.LOCAL_LLM_URL,
+          LOCAL_LLM_MODEL: process.env.LOCAL_LLM_MODEL,
+          AZURE_OPENAI_ENDPOINT: process.env.AZURE_OPENAI_ENDPOINT,
+          AZURE_OPENAI_API_VERSION: process.env.AZURE_OPENAI_API_VERSION,
+          PORT: process.env.PORT,
+          HOST: process.env.HOST
+        }
+      });
+
+    } catch (error) {
+      console.error('.env読み取りエラー:', error);
+      res.status(500).json({
+        error: '.env読み取りエラー',
+        message: error.message
+      });
+    }
+  });
+
+  // .envファイルを更新
+  app.post('/env', async (req, res) => {
+    try {
+      const { envContent, variables } = req.body;
+
+      if (!envContent && !variables) {
+        return res.status(400).json({
+          error: 'envContent または variables が必要です'
+        });
+      }
+
+      const envPath = path.join(__dirname, '.env');
+      let finalContent = '';
+
+      if (envContent) {
+        // 直接的な内容更新
+        finalContent = envContent;
+      } else if (variables) {
+        // 変数ベースの更新
+        const existingContent = existsSync(envPath) ? readFileSync(envPath, 'utf8') : '';
+        const existingVars = new Map();
+        const comments = [];
+
+        // 既存の.envファイルをパースして、コメントと変数を分離
+        existingContent.split('\n').forEach(line => {
+          const trimmedLine = line.trim();
+          if (trimmedLine.startsWith('#') || trimmedLine === '') {
+            comments.push(line);
+          } else if (trimmedLine.includes('=')) {
+            const [key, ...valueParts] = trimmedLine.split('=');
+            if (key) {
+              existingVars.set(key.trim(), valueParts.join('='));
+            }
+          }
+        });
+
+        // 新しい変数で既存の変数を更新
+        Object.entries(variables).forEach(([key, value]) => {
+          existingVars.set(key, value);
+        });
+
+        // 最終的な内容を構築
+        const lines = [];
+
+        // コメントセクションを追加
+        if (comments.length > 0) {
+          lines.push('# AI Agent Configuration');
+          lines.push('# Updated: ' + new Date().toISOString());
+          lines.push('');
+        }
+
+        // 変数を追加（順序を保持）
+        const orderedKeys = [
+          'AI_PROVIDER', 'AI_MODEL', 'AI_TEMPERATURE', 'AI_STREAMING', 'AI_MAX_TOKENS',
+          'OPENAI_API_KEY',
+          'AZURE_OPENAI_ENDPOINT', 'AZURE_OPENAI_API_VERSION',
+          'LOCAL_LLM_URL', 'LOCAL_LLM_MODEL',
+          'PORT', 'HOST'
+        ];
+
+        orderedKeys.forEach(key => {
+          if (existingVars.has(key)) {
+            lines.push(`${key}=${existingVars.get(key)}`);
+            existingVars.delete(key);
+          }
+        });
+
+        // 残りの変数を追加
+        existingVars.forEach((value, key) => {
+          lines.push(`${key}=${value}`);
+        });
+
+        finalContent = lines.join('\n');
+      }
+
+      // バックアップを作成
+      const backupPath = path.join(__dirname, `.env.backup.${Date.now()}`);
+      if (existsSync(envPath)) {
+        copyFileSync(envPath, backupPath);
+      }
+
+      // .envファイルを更新
+      writeFileSync(envPath, finalContent, 'utf8');
+
+      res.json({
+        status: 'success',
+        message: '.envファイルを更新しました',
+        backupPath: backupPath,
+        note: '変更を反映するには /env/reload を呼び出すか、サーバーを再起動してください'
+      });
+
+    } catch (error) {
+      console.error('.env更新エラー:', error);
+      res.status(500).json({
+        error: '.env更新エラー',
+        message: error.message
+      });
+    }
+  });
+
+  // .env内容を再読み込み（プロセス再起動なし）
+  app.post('/env/reload', async (req, res) => {
+    try {
+      const envPath = path.join(__dirname, '.env');
+
+      if (!existsSync(envPath)) {
+        return res.status(404).json({
+          error: '.envファイルが見つかりません'
+        });
+      }
+
+      // 現在の環境変数をバックアップ
+      const originalEnv = { ...process.env };
+
+      // .envファイルを再読み込み
+      const envContent = readFileSync(envPath, 'utf8');
+      const envVars = {};
+
+      envContent.split('\n').forEach(line => {
+        const trimmedLine = line.trim();
+        if (trimmedLine && !trimmedLine.startsWith('#')) {
+          const [key, ...valueParts] = trimmedLine.split('=');
+          if (key && valueParts.length > 0) {
+            const value = valueParts.join('=');
+            envVars[key] = value;
+            process.env[key] = value;
+          }
+        }
+      });
+
+      // AI設定を更新
+      if (envVars.AI_PROVIDER) AI_CONFIG.provider = envVars.AI_PROVIDER;
+      if (envVars.AI_MODEL) AI_CONFIG.model = envVars.AI_MODEL;
+      if (envVars.AI_TEMPERATURE) AI_CONFIG.temperature = parseFloat(envVars.AI_TEMPERATURE);
+      if (envVars.AI_STREAMING !== undefined) AI_CONFIG.streaming = envVars.AI_STREAMING !== 'false';
+      if (envVars.AI_MAX_TOKENS) AI_CONFIG.maxTokens = parseInt(envVars.AI_MAX_TOKENS);
+      if (envVars.LOCAL_LLM_URL) AI_CONFIG.localLlmUrl = envVars.LOCAL_LLM_URL;
+      if (envVars.LOCAL_LLM_MODEL) AI_CONFIG.localLlmModel = envVars.LOCAL_LLM_MODEL;
+
+      // OpenAIクライアントを再初期化
+      const oldProvider = AI_CONFIG.provider;
+      const newOpenAI = initializeOpenAI();
+
+      if (newOpenAI) {
+        openai = newOpenAI;
+        // AIエージェントを再初期化
+        if (aiAgent) {
+          Object.setPrototypeOf(aiAgent, AIAgent.prototype);
+          aiAgent.openai = newOpenAI;
+        } else {
+          global.aiAgent = new AIAgent(toolManager, newOpenAI);
+        }
+      }
+
+      res.json({
+        status: 'success',
+        message: '.env設定を再読み込みしました',
+        reloadedVars: Object.keys(envVars),
+        oldProvider: oldProvider,
+        newProvider: AI_CONFIG.provider,
+        aiClientReinitialized: !!newOpenAI,
+        currentConfig: AI_CONFIG
+      });
+
+    } catch (error) {
+      console.error('.env再読み込みエラー:', error);
+      res.status(500).json({
+        error: '.env再読み込みエラー',
+        message: error.message
+      });
+    }
+  });
+
   // MCP情報エンドポイント
   app.get('/info', (req, res) => {
     res.json({
       name: "dynamic-tool-mcp-http",
       version: "1.0.0",
-      description: "動的ツール管理MCP対応サーバー（HTTP版）+ AIエージェント + アイコン対応 + ローカルLLM対応",
+      description: "動的ツール管理MCP対応サーバー（HTTP版）+ AIエージェント + アイコン対応 + ローカルLLM対応 + .env管理機能",
       transport: "streamable-http",
       loadedTools: toolManager.tools.size,
       toolsDirectory: TOOLS_DIR,
@@ -1105,21 +1345,23 @@ async function main() {
         toolIcon: `/tools/:toolName/icon`,
         reload: `/tools/reload`,
         agent: `/agent`,
-        agentConfig: `/agent/config`
+        agentConfig: `/agent/config`,
+        env: `/env`,
+        envReload: `/env/reload`
       }
     });
   });
-  
+
   // セッション管理用マップ
   const transports = new Map();
-  
+
   // MCP Streamable HTTP エンドポイント（セッション管理付き）
   app.post('/mcp', async (req, res) => {
     try {
       const sessionId = req.headers['mcp-session-id'];
       let transport;
       let server;
-      
+
       if (sessionId && transports.has(sessionId)) {
         const session = transports.get(sessionId);
         transport = session.transport;
@@ -1130,7 +1372,7 @@ async function main() {
           sessionIdGenerator: () => newSessionId,
         });
         server = createMcpServer();
-        
+
         transports.set(newSessionId, { transport, server });
         await server.connect(transport);
       } else {
@@ -1144,9 +1386,9 @@ async function main() {
         });
         return;
       }
-      
+
       await transport.handleRequest(req, res, req.body);
-      
+
     } catch (error) {
       console.error('MCP request handling error:', error);
       if (!res.headersSent) {
@@ -1161,37 +1403,37 @@ async function main() {
       }
     }
   });
-  
+
   // GET リクエスト（サーバーからクライアントへの通信用）
   app.get('/mcp', async (req, res) => {
     const sessionId = req.headers['mcp-session-id'];
-    
+
     if (!sessionId || !transports.has(sessionId)) {
       res.status(400).send('Invalid or missing session ID');
       return;
     }
-    
+
     const { transport } = transports.get(sessionId);
     await transport.handleRequest(req, res);
   });
-  
+
   // セッション削除
   app.delete('/mcp', async (req, res) => {
     const sessionId = req.headers['mcp-session-id'];
-    
+
     if (sessionId && transports.has(sessionId)) {
       const { transport, server } = transports.get(sessionId);
       await transport.close();
       await server.close();
       transports.delete(sessionId);
     }
-    
+
     res.status(200).send('Session deleted');
   });
-  
+
   // HTTPサーバー起動
   const httpServer = app.listen(PORT, HOST, () => {
-    console.log(`🚀 Dynamic Tool MCP Server + AI Agent（ローカルLLM対応版）が起動しました`);
+    console.log(`🚀 Dynamic Tool MCP Server + AI Agent（.env管理対応版）が起動しました`);
     console.log(`   URL: http://${HOST}:${PORT}`);
     console.log(`   MCP Endpoint: http://${HOST}:${PORT}/mcp`);
     console.log(`   AI Agent: http://${HOST}:${PORT}/agent`);
@@ -1199,9 +1441,11 @@ async function main() {
     console.log(`   Tools List: http://${HOST}:${PORT}/tools`);
     console.log(`   Tool Icons: http://${HOST}:${PORT}/tools/:toolName/icon`);
     console.log(`   Tools Reload: POST http://${HOST}:${PORT}/tools/reload`);
+    console.log(`   Env Management: GET/POST http://${HOST}:${PORT}/env`);
+    console.log(`   Env Reload: POST http://${HOST}:${PORT}/env/reload`);
     console.log(`   Info: http://${HOST}:${PORT}/info`);
     console.log(`   Tools Directory: ${TOOLS_DIR}`);
-    
+
     if (aiAgent) {
       console.log(`   🤖 AIエージェント有効: ${AI_CONFIG.provider.toUpperCase()}`);
       if (AI_CONFIG.provider === 'localllm') {
@@ -1214,11 +1458,11 @@ async function main() {
       console.log(`   ⚠️  AIエージェント無効: 設定を確認してください`);
     }
   });
-  
+
   // グレースフルシャットダウン
   const shutdown = async (signal) => {
     console.log(`\n${signal} 受信: サーバーを終了しています...`);
-    
+
     for (const [sessionId, session] of transports) {
       try {
         await session.transport.close();
@@ -1227,13 +1471,13 @@ async function main() {
         console.error(`セッション ${sessionId} の終了エラー:`, error);
       }
     }
-    
+
     httpServer.close(() => {
       console.log("サーバーが正常に終了しました");
       process.exit(0);
     });
   };
-  
+
   process.on('SIGINT', () => shutdown('SIGINT'));
   process.on('SIGTERM', () => shutdown('SIGTERM'));
 }
