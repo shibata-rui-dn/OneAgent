@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * 動的ツール管理MCP対応サーバー（HTTP版）+ AIエージェント機能 + アイコン対応 + ローカルLLM対応 + .env管理機能
+ * 動的ツール管理MCP対応サーバー（HTTP版）+ AIエージェント機能 + アイコン対応 + ローカルLLM対応（LangChain.js Agent） + .env管理機能
  * 最新MCP SDK v1.12.0対応
 */
 
@@ -17,6 +17,14 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import OpenAI from 'openai';
 import dotenv from 'dotenv';
+
+// LangChain.js imports
+import { ChatOpenAI } from "@langchain/openai";
+import { AgentExecutor, createReactAgent } from "langchain/agents";
+import { pull } from "langchain/hub";
+import { DynamicTool } from "@langchain/core/tools";
+import { BaseMessage, HumanMessage, SystemMessage } from "@langchain/core/messages";
+import { ChatPromptTemplate, MessagesPlaceholder, PromptTemplate } from "@langchain/core/prompts";
 
 // 環境変数の読み込み（.envファイル）
 dotenv.config();
@@ -42,6 +50,7 @@ const AI_CONFIG = {
 
 // OpenAI/Azure OpenAI/ローカルLLM設定
 let openai;
+let langChainLLM; // LangChain用LLM
 
 function initializeOpenAI() {
   const provider = AI_CONFIG.provider.toLowerCase();
@@ -84,17 +93,32 @@ function initializeOpenAI() {
         break;
 
       case 'localllm':
-        // ローカルLLM（VLLM）設定
+        // ローカルLLM（VLLM）設定 - LangChain用
         const localLlmUrl = AI_CONFIG.localLlmUrl;
 
-        console.log(`🔄 ローカルLLMに接続中: ${localLlmUrl}`);
+        console.log(`🔄 ローカルLLM（LangChain）に接続中: ${localLlmUrl}`);
 
-        // VLLMはOpenAI互換APIを提供するため、baseURLを変更するだけ
-        config.baseURL = `${localLlmUrl}/v1`;
-        config.apiKey = 'dummy-key'; // VLLMではAPI keyは不要だが、OpenAIクライアントでは必須なのでダミーを設定
+        // LangChain用のChatOpenAIインスタンスを作成
+        langChainLLM = new ChatOpenAI({
+          openAIApiKey: 'dummy-key', // VLLMではAPI keyは不要だが必須なのでダミーを設定
+          modelName: AI_CONFIG.localLlmModel,
+          temperature: AI_CONFIG.temperature,
+          maxTokens: AI_CONFIG.maxTokens,
+          configuration: {
+            baseURL: localLlmUrl,
+            timeout: 120000, // 2分
+          },
+          streaming: AI_CONFIG.streaming,
+        });
 
-        // ローカルLLMの場合、タイムアウトを長めに設定
-        config.timeout = 120000; // 2分
+        console.log(`✅ LangChain LLM クライアントを初期化しました`);
+        console.log(`   モデル: ${AI_CONFIG.localLlmModel}`);
+        console.log(`   エンドポイント: ${localLlmUrl}`);
+
+        // OpenAIクライアントも一応作成（非ツール用途）
+        config.baseURL = localLlmUrl;
+        config.apiKey = 'dummy-key';
+        config.timeout = 120000;
         break;
 
       default:
@@ -104,13 +128,10 @@ function initializeOpenAI() {
 
     const client = new OpenAI(config);
 
-    console.log(`✅ ${provider.toUpperCase()} クライアントを初期化しました`);
-    console.log(`   モデル: ${AI_CONFIG.model}`);
-    console.log(`   ストリーミング: ${AI_CONFIG.streaming}`);
-
-    if (provider === 'localllm') {
-      console.log(`   エンドポイント: ${AI_CONFIG.localLlmUrl}`);
-      console.log(`   VLLMモデル: ${AI_CONFIG.localLlmModel}`);
+    if (provider !== 'localllm') {
+      console.log(`✅ ${provider.toUpperCase()} クライアントを初期化しました`);
+      console.log(`   モデル: ${AI_CONFIG.model}`);
+      console.log(`   ストリーミング: ${AI_CONFIG.streaming}`);
     }
 
     return client;
@@ -236,7 +257,7 @@ class ToolManager {
     }));
   }
 
-  // 新規追加: 選択されたツールのみのOpenAI tools定義を取得
+  // 修正: 選択されたツールのみのOpenAI tools定義を取得
   getSelectedOpenAITools(selectedToolNames) {
     if (!selectedToolNames || selectedToolNames.length === 0) {
       return [];
@@ -268,7 +289,92 @@ class ToolManager {
     return selectedTools;
   }
 
-  // 新規追加: 選択されたツールが実行可能かチェック
+  // 新規追加: LangChain用のツール定義を取得
+  getLangChainTools(selectedToolNames) {
+    if (!selectedToolNames || selectedToolNames.length === 0) {
+      return [];
+    }
+
+    const langChainTools = [];
+    const notFoundTools = [];
+
+    for (const toolName of selectedToolNames) {
+      const tool = this.tools.get(toolName);
+      if (tool) {
+        const langChainTool = new DynamicTool({
+          name: tool.name,
+          description: tool.description,
+          func: async (input) => {
+            try {
+              console.log(`🔧 ツール ${tool.name} 実行開始`);
+              console.log(`📝 入力:`, input);
+
+              let args = {};
+
+              // 入力を適切にパース
+              if (typeof input === 'string') {
+                if (tool.name === 'add_numbers' || tool.name === 'multiply_numbers') {
+                  const numbers = input.match(/\d+/g);
+                  if (numbers && numbers.length >= 2) {
+                    args = {
+                      a: parseInt(numbers[0]),
+                      b: parseInt(numbers[1])
+                    };
+                  } else {
+                    throw new Error(`数値を2つ検出できませんでした: ${input}`);
+                  }
+                } else if (tool.name === 'process_string') {
+                  const parts = input.split(',').map(p => p.trim());
+                  if (parts.length >= 2) {
+                    args = {
+                      text: parts[0],
+                      operation: parts[1]
+                    };
+                  } else {
+                    args = { text: input, operation: 'length' };
+                  }
+                } else {
+                  try {
+                    args = JSON.parse(input);
+                  } catch (parseError) {
+                    args = { input: input };
+                  }
+                }
+              } else {
+                args = input;
+              }
+
+              console.log(`⚙️ ツール ${tool.name} 引数:`, args);
+
+              const result = await this.executeToolHandler(tool.name, args);
+              const resultText = result.content?.map(c => c.text).join('\n') || 'ツール実行完了';
+
+              console.log(`✅ ツール ${tool.name} 結果:`, resultText);
+
+              return resultText;
+            } catch (error) {
+              const errorMsg = `エラー: ${error.message}`;
+              console.error(`❌ ツール ${tool.name} 実行エラー:`, error);
+              return errorMsg;
+            }
+          },
+          schema: tool.inputSchema
+        });
+
+        langChainTools.push(langChainTool);
+      } else {
+        notFoundTools.push(toolName);
+      }
+    }
+
+    if (notFoundTools.length > 0) {
+      console.warn(`⚠️ 以下のツールが見つかりません: ${notFoundTools.join(', ')}`);
+    }
+
+    return langChainTools;
+  }
+
+  // 修正: 選択されたツールが実行可能かチェック
   validateSelectedTools(selectedToolNames) {
     if (!selectedToolNames || selectedToolNames.length === 0) {
       return { valid: true, notFound: [] };
@@ -536,20 +642,493 @@ class ToolManager {
 }
 
 /**
- * AIエージェントクラス（ローカルLLM対応版）
+ * AIエージェントクラス（LangChain.js対応版）
  */
 class AIAgent {
   constructor(toolManager, openaiClient) {
     this.toolManager = toolManager;
     this.openai = openaiClient;
+    this.langChainLLM = langChainLLM;
   }
 
-  // 修正: 選択されたツールのみを使用するように変更
+  // 修正: localllmの場合はLangChain Agentを使用
   processQuery(query, options = {}) {
-    if (!this.openai) {
+    const provider = AI_CONFIG.provider.toLowerCase();
+
+    if (provider === 'localllm' && this.langChainLLM) {
+      return this.processQueryWithLangChain(query, options);
+    } else if (this.openai) {
+      return this.processQueryWithOpenAI(query, options);
+    } else {
       throw new Error('AIクライアントが初期化されていません');
     }
+  }
 
+  // 新規追加: LangChain Agent を使用した処理
+  processQueryWithLangChain(query, options = {}) {
+    const streaming = options.streaming !== undefined ? options.streaming : AI_CONFIG.streaming;
+    const selectedTools = options.tools || [];
+
+    // 選択されたツールを検証
+    const validation = this.toolManager.validateSelectedTools(selectedTools);
+    if (!validation.valid) {
+      throw new Error(`以下のツールが見つかりません: ${validation.notFound.join(', ')}`);
+    }
+
+    // LangChainツールを取得
+    const langChainTools = this.toolManager.getLangChainTools(selectedTools);
+
+    console.log(`LangChain Agent処理開始 (${AI_CONFIG.provider.toUpperCase()})`);
+    console.log(`使用可能ツール数: ${langChainTools.length}`);
+    console.log(`モデル: ${AI_CONFIG.localLlmModel}`);
+
+    if (streaming) {
+      // ストリーミングの場合は直接async generatorを返す
+      return this.handleLangChainStreamingResponse(query, langChainTools);
+    } else {
+      // 非ストリーミングの場合はPromiseを返す
+      return this.handleLangChainNonStreamingResponse(query, langChainTools);
+    }
+  }
+
+  // 新規追加: LangChain ストリーミング処理（改良版）
+  async *handleLangChainStreamingResponse(query, langChainTools) {
+    try {
+      console.log(`🦜 LangChain処理開始`);
+      console.log(`📝 クエリ: "${query}"`);
+      console.log(`🔧 ツール数: ${langChainTools.length}`);
+
+      if (langChainTools.length > 0) {
+        // 最初に利用可能なツールを表示
+        yield {
+          type: 'text',
+          content: `🔧 **利用可能なツール**: ${langChainTools.length}個\n`
+        };
+
+        const toolList = langChainTools.map(tool => `• ${tool.name}`).join('\n');
+        yield {
+          type: 'text',
+          content: `${toolList}\n\n`
+        };
+
+        // ReActプロンプトテンプレートを作成（改良版）
+        const prompt = PromptTemplate.fromTemplate(`
+あなたは質問に答えるための推論と行動を実行するアシスタントです。以下のツールにアクセスできます:
+
+{tools}
+
+以下の形式を使用してください:
+
+Question: 答える必要がある入力質問
+Thought: 何をすべきかを常に考える必要があります
+Action: 実行するアクション、[{tool_names}]のいずれかである必要があります
+Action Input: アクションへの入力
+Observation: アクションの結果
+... (この Thought/Action/Action Input/Observation は繰り返すことができます)
+Thought: 最終的な答えがわかりました
+Final Answer: 元の入力質問に対する最終的な答え
+
+重要な注意事項:
+- add_numbers を使う場合: Action Input に数字1, 数字2 の形式
+- multiply_numbers を使う場合: Action Input に数字1, 数字2 の形式
+- process_string を使う場合: Action Input に 文字列, 操作 の形式
+
+開始!
+
+Question: {input}
+Thought: {agent_scratchpad}
+`);
+
+        try {
+          console.log(`🤖 ReActAgent作成中...`);
+
+          // ReActAgentを作成
+          const agent = await createReactAgent({
+            llm: this.langChainLLM,
+            tools: langChainTools,
+            prompt: prompt,
+          });
+
+          const agentExecutor = new AgentExecutor({
+            agent,
+            tools: langChainTools,
+            verbose: true,
+            maxIterations: 10,
+            handleParsingErrors: true,
+          });
+
+          console.log(`⚙️ AgentExecutor実行中...`);
+
+          // AgentExecutorをストリーミングで実行
+          yield { type: 'text', content: `🤖 **AI Agent** が分析を開始します...\n\n` };
+
+          try {
+            const stream = await agentExecutor.streamEvents(
+              { input: query },
+              { 
+                version: "v1",
+                includeNames: ["ReactAgent", "ChatOpenAI"],
+                includeTags: ["tool"]
+              }
+            );
+
+            let stepNumber = 1;
+            let currentThought = '';
+            let isProcessingThought = false;
+            let finalAnswer = '';
+
+            for await (const event of stream) {
+              console.log(`📡 Event:`, event.event, event.name, event.data);
+
+              // LLMの出力（Thought部分）をストリーミング
+              if (event.event === 'on_llm_stream' && event.name === 'ChatOpenAI') {
+                const content = event.data?.chunk?.content || '';
+                if (content) {
+                  // Thoughtの開始を検出
+                  if (content.includes('Thought:') && !isProcessingThought) {
+                    isProcessingThought = true;
+                    yield { type: 'text', content: `💭 **思考${stepNumber}**: ` };
+                    currentThought = '';
+                  }
+                  
+                  // Action:が含まれている場合、Thoughtの終了
+                  if (content.includes('Action:') && isProcessingThought) {
+                    isProcessingThought = false;
+                    if (currentThought.trim()) {
+                      yield { type: 'text', content: `\n\n` };
+                    }
+                    
+                    // Actionの開始
+                    yield { type: 'text', content: `⚡ **アクション${stepNumber}**: ` };
+                    const actionMatch = content.match(/Action:\s*(\w+)/);
+                    if (actionMatch) {
+                      yield { type: 'text', content: `${actionMatch[1]} ツールを実行\n` };
+                    }
+                  }
+                  
+                  // Final Answer:が含まれている場合
+                  if (content.includes('Final Answer:')) {
+                    yield { type: 'text', content: `\n📋 **最終回答**:\n` };
+                    finalAnswer = content.replace(/.*Final Answer:\s*/, '');
+                    if (finalAnswer) {
+                      yield { type: 'text', content: finalAnswer };
+                    }
+                  }
+                  
+                  // 通常のthought内容をストリーミング
+                  if (isProcessingThought && !content.includes('Thought:') && !content.includes('Action:')) {
+                    currentThought += content;
+                    yield { type: 'text', content: content };
+                  }
+                }
+              }
+
+              // ツール実行の開始
+              if (event.event === 'on_tool_start') {
+                const toolName = event.name;
+                const toolInput = event.data?.input;
+                
+                yield { type: 'tool_call_start', tool_name: toolName, tool_args: JSON.stringify(toolInput) };
+                yield { type: 'text', content: `🔧 **${toolName}** 実行中...\n` };
+              }
+
+              // ツール実行の終了
+              if (event.event === 'on_tool_end') {
+                const toolName = event.name;
+                const toolOutput = event.data?.output;
+                
+                yield { type: 'tool_call_result', tool_name: toolName, result: toolOutput };
+                yield { type: 'text', content: `✅ **観察${stepNumber}**: ${toolOutput}\n\n` };
+                stepNumber++;
+              }
+
+              // エラーハンドリング
+              if (event.event === 'on_tool_error') {
+                const toolName = event.name;
+                const error = event.data?.error;
+                
+                yield { type: 'tool_call_error', tool_name: toolName, error: error };
+                yield { type: 'text', content: `❌ **ツールエラー**: ${error}\n\n` };
+              }
+            }
+
+            console.log(`✅ Agent実行完了`);
+            
+            // 最終結果がまだ表示されていない場合の処理
+            if (!finalAnswer) {
+              yield { type: 'text', content: `\n🎯 **処理完了**: 計算が完了しました。\n` };
+            }
+
+          } catch (streamError) {
+            console.error('⚠️ AgentExecutor ストリーミングエラー:', streamError);
+            
+            // フォールバック: 従来の方法で実行
+            yield { type: 'text', content: `⚠️ ストリーミング処理でエラーが発生、代替処理で実行中...\n\n` };
+            
+            const result = await agentExecutor.invoke({ input: query });
+            const content = result.output || '結果を取得できませんでした';
+            
+            yield { type: 'text', content: `📋 **最終結果**:\n` };
+            
+            const chunkSize = 8;
+            for (let i = 0; i < content.length; i += chunkSize) {
+              const chunk = content.slice(i, i + chunkSize);
+              yield { type: 'text', content: chunk };
+              await new Promise(resolve => setTimeout(resolve, 40));
+            }
+          }
+
+        } catch (reactError) {
+          console.warn('⚠️ ReActAgent エラー、フォールバック処理に移行:', reactError.message);
+
+          yield {
+            type: 'text',
+            content: `⚠️ **高度な推論でエラーが発生**、代替処理に切り替えます...\n\n`
+          };
+
+          // フォールバック: 単純なプロンプトベースのツール呼び出し
+          yield* this.handleSimpleToolCalling(query, langChainTools);
+        }
+      } else {
+        // ツールなしの場合は直接LLMを使用
+        console.log(`💬 ツールなし、直接LLM処理`);
+
+        const systemMessage = `あなたは親切なAIアシスタントです。現在利用可能なツールはありません。一般的な知識と会話能力を活用して、ユーザーの質問に答えてください。`;
+
+        const messages = [
+          new SystemMessage(systemMessage),
+          new HumanMessage(query)
+        ];
+
+        const stream = await this.langChainLLM.stream(messages);
+
+        for await (const chunk of stream) {
+          if (chunk.content) {
+            yield { type: 'text', content: chunk.content };
+          }
+        }
+      }
+
+    } catch (error) {
+      console.error('❌ LangChain ストリーミング処理エラー:', error);
+      yield { type: 'error', content: `LangChain エラー: ${error.message}` };
+    }
+  }
+
+  // 新規追加: 単純なプロンプトベースのツール呼び出し
+  async *handleSimpleToolCalling(query, langChainTools) {
+    try {
+      // ツールの説明を生成
+      const toolDescriptions = langChainTools.map(tool =>
+        `- ${tool.name}: ${tool.description}`
+      ).join('\n');
+
+      // 数式検出の強化
+      const mathPattern = /(\d+)\s*[\+\-\*\/×÷]\s*(\d+)/;
+      const mathMatch = query.match(mathPattern);
+
+      console.log(`📝 クエリ分析: "${query}"`);
+      console.log(`🔧 利用可能ツール: ${langChainTools.length}個`);
+
+      if (mathMatch && langChainTools.some(tool => tool.name === 'add_numbers' || tool.name === 'multiply_numbers')) {
+        const numbers = query.match(/\d+/g);
+        if (numbers && numbers.length >= 2) {
+          const a = parseInt(numbers[0]);
+          const b = parseInt(numbers[1]);
+
+          // 演算子を判定
+          let toolName = 'add_numbers';
+          let operation = '+';
+          if (query.includes('×') || query.includes('*') || query.includes('掛け') || query.includes('かけ')) {
+            toolName = 'multiply_numbers';
+            operation = '×';
+          }
+
+          const targetTool = langChainTools.find(t => t.name === toolName);
+          if (targetTool) {
+            console.log(`🔧 ツール実行開始: ${toolName}`);
+
+            // ツール実行開始を通知
+            yield {
+              type: 'tool_call_start',
+              tool_name: toolName,
+              tool_args: JSON.stringify({ a, b })
+            };
+
+            // プロセス表示用のテキスト
+            yield {
+              type: 'text',
+              content: `\n🔧 **${toolName}** ツールを使用しています...\n`
+            };
+            yield {
+              type: 'text',
+              content: `📝 引数: a=${a}, b=${b}\n`
+            };
+
+            try {
+              const toolResult = await targetTool.func(JSON.stringify({ a, b }));
+
+              console.log(`✅ ツール実行結果: ${toolResult}`);
+
+              // ツール実行結果を通知
+              yield {
+                type: 'tool_call_result',
+                tool_name: toolName,
+                result: toolResult
+              };
+
+              // 結果表示
+              yield {
+                type: 'text',
+                content: `✅ **実行結果**: ${toolResult}\n\n`
+              };
+
+              // 最終回答を生成
+              const finalAnswer = `**答え**: ${a} ${operation} ${b} = ${toolName === 'add_numbers' ? a + b : a * b}`;
+
+              // 最終答えを少しずつ表示
+              const chunkSize = 5;
+              for (let i = 0; i < finalAnswer.length; i += chunkSize) {
+                const chunk = finalAnswer.slice(i, i + chunkSize);
+                yield { type: 'text', content: chunk };
+                await new Promise(resolve => setTimeout(resolve, 30));
+              }
+
+              return;
+            } catch (toolError) {
+              console.error(`❌ ツール実行エラー: ${toolError.message}`);
+
+              yield {
+                type: 'tool_call_error',
+                tool_name: toolName,
+                error: toolError.message
+              };
+
+              yield {
+                type: 'text',
+                content: `❌ **エラー**: ${toolError.message}\n`
+              };
+            }
+          }
+        }
+      }
+
+      // ツールを使用しない場合、または失敗した場合の処理
+      console.log(`💬 通常の会話として処理`);
+
+      const systemMessage = langChainTools.length > 0
+        ? `あなたは親切なAIアシスタントです。利用可能なツールを使って、ユーザーの質問に適切に答えてください。
+
+利用可能なツール:
+${toolDescriptions}
+
+数式の計算が含まれる場合は、適切なツールを使用してください。`
+        : `あなたは親切なAIアシスタントです。現在利用可能なツールはありません。一般的な知識と会話能力を活用して、ユーザーの質問に答えてください。`;
+
+      const messages = [
+        new SystemMessage(systemMessage),
+        new HumanMessage(query)
+      ];
+
+      const response = await this.langChainLLM.invoke(messages);
+      let content = response.content;
+
+      // 結果を小さなチャンクに分割して表示
+      const chunkSize = 8;
+      for (let i = 0; i < content.length; i += chunkSize) {
+        const chunk = content.slice(i, i + chunkSize);
+        yield { type: 'text', content: chunk };
+        await new Promise(resolve => setTimeout(resolve, 40));
+      }
+
+    } catch (error) {
+      console.error('単純ツール呼び出しエラー:', error);
+      yield { type: 'error', content: `ツール呼び出しエラー: ${error.message}` };
+    }
+  }
+
+  // 新規追加: LangChain 非ストリーミング処理
+  async handleLangChainNonStreamingResponse(query, langChainTools) {
+    try {
+      const systemMessage = langChainTools.length > 0
+        ? `あなたは親切なAIアシスタントです。利用可能なツールを使って、ユーザーの質問に適切に答えてください。
+
+利用可能なツール:
+${langChainTools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n')}
+
+ツールを使用する際は、適切な引数を渡してください。`
+        : `あなたは親切なAIアシスタントです。現在利用可能なツールはありません。一般的な知識と会話能力を活用して、ユーザーの質問に答えてください。`;
+
+      if (langChainTools.length > 0) {
+        // ツールありの場合はReActAgentを使用
+        const prompt = PromptTemplate.fromTemplate(`
+あなたは質問に答えるための推論と行動を実行するアシスタントです。以下のツールにアクセスできます:
+
+{tools}
+
+以下の形式を使用してください:
+
+Question: 答える必要がある入力質問
+Thought: 何をすべきかを常に考える必要があります
+Action: 実行するアクション、[{tool_names}]のいずれかである必要があります
+Action Input: アクションへの入力
+Observation: アクションの結果
+... (この Thought/Action/Action Input/Observation は繰り返すことができます)
+Thought: 最終的な答えがわかりました
+Final Answer: 元の入力質問に対する最終的な答え
+
+開始!
+
+Question: {input}
+Thought: {agent_scratchpad}
+`);
+
+        const agent = await createReactAgent({
+          llm: this.langChainLLM,
+          tools: langChainTools,
+          prompt,
+        });
+
+        const agentExecutor = new AgentExecutor({
+          agent,
+          tools: langChainTools,
+          verbose: true,
+        });
+
+        const result = await agentExecutor.invoke({ input: query });
+
+        return {
+          type: 'response',
+          content: result.output,
+          tool_calls: [] // LangChainの場合、ツール呼び出し詳細は含まれない
+        };
+      } else {
+        // ツールなしの場合は直接LLMを使用
+        const messages = [
+          new SystemMessage(systemMessage),
+          new HumanMessage(query)
+        ];
+
+        const response = await this.langChainLLM.invoke(messages);
+
+        return {
+          type: 'response',
+          content: response.content,
+          tool_calls: []
+        };
+      }
+
+    } catch (error) {
+      console.error('LangChain 処理エラー:', error);
+      return {
+        type: 'error',
+        content: `LangChain エラー: ${error.message}`
+      };
+    }
+  }
+
+  // 既存: OpenAI用の処理（そのまま）
+  processQueryWithOpenAI(query, options = {}) {
     // ローカルLLMの場合はモデル名を適切に設定
     let model = options.model || AI_CONFIG.model;
     if (AI_CONFIG.provider === 'localllm') {
@@ -559,7 +1138,7 @@ class AIAgent {
     const streaming = options.streaming !== undefined ? options.streaming : AI_CONFIG.streaming;
     const temperature = options.temperature !== undefined ? options.temperature : AI_CONFIG.temperature;
     const maxTokens = options.maxTokens !== undefined ? options.maxTokens : AI_CONFIG.maxTokens;
-    const selectedTools = options.tools || []; // 新規: 選択されたツール
+    const selectedTools = options.tools || [];
 
     // 選択されたツールを検証
     const validation = this.toolManager.validateSelectedTools(selectedTools);
@@ -570,7 +1149,7 @@ class AIAgent {
     // 選択されたツールのOpenAI定義を取得
     const availableTools = this.toolManager.getSelectedOpenAITools(selectedTools);
 
-    // システムプロンプトを動的に生成（ローカルLLM用に調整）
+    // システムプロンプトを動的に生成
     let systemPrompt = `あなたは親切なAIアシスタントです。`;
 
     if (availableTools.length > 0) {
@@ -854,7 +1433,7 @@ ${availableTools.map(tool => `- ${tool.function.name}: ${tool.function.descripti
 // 初期化
 const toolManager = new ToolManager();
 openai = initializeOpenAI();
-const aiAgent = openai ? new AIAgent(toolManager, openai) : null;
+const aiAgent = (openai || langChainLLM) ? new AIAgent(toolManager, openai) : null;
 
 // MCP サーバー作成 - 最新API
 function createMcpServer() {
@@ -924,7 +1503,8 @@ async function main() {
         model: AI_CONFIG.model,
         streaming: AI_CONFIG.streaming,
         localLlmUrl: AI_CONFIG.provider === 'localllm' ? AI_CONFIG.localLlmUrl : undefined,
-        localLlmModel: AI_CONFIG.provider === 'localllm' ? AI_CONFIG.localLlmModel : undefined
+        localLlmModel: AI_CONFIG.provider === 'localllm' ? AI_CONFIG.localLlmModel : undefined,
+        langChainEnabled: AI_CONFIG.provider === 'localllm' && !!langChainLLM
       } : null
     });
   });
@@ -979,7 +1559,7 @@ async function main() {
     }
   });
 
-  // AIエージェントエンドポイント
+  // AIエージェントエンドポイント（修正版）
   app.post('/agent', async (req, res) => {
     if (!aiAgent) {
       return res.status(503).json({
@@ -1058,6 +1638,7 @@ async function main() {
     res.json({
       available: !!aiAgent,
       config: AI_CONFIG,
+      langChainEnabled: AI_CONFIG.provider === 'localllm' && !!langChainLLM,
       tools: toolManager.getOpenAITools().map(tool => ({
         name: tool.function.name,
         description: tool.function.description
@@ -1296,12 +1877,13 @@ async function main() {
       const oldProvider = AI_CONFIG.provider;
       const newOpenAI = initializeOpenAI();
 
-      if (newOpenAI) {
+      if (newOpenAI || langChainLLM) {
         openai = newOpenAI;
         // AIエージェントを再初期化
         if (aiAgent) {
           Object.setPrototypeOf(aiAgent, AIAgent.prototype);
           aiAgent.openai = newOpenAI;
+          aiAgent.langChainLLM = langChainLLM;
         } else {
           global.aiAgent = new AIAgent(toolManager, newOpenAI);
         }
@@ -1313,7 +1895,8 @@ async function main() {
         reloadedVars: Object.keys(envVars),
         oldProvider: oldProvider,
         newProvider: AI_CONFIG.provider,
-        aiClientReinitialized: !!newOpenAI,
+        aiClientReinitialized: !!(newOpenAI || langChainLLM),
+        langChainEnabled: AI_CONFIG.provider === 'localllm' && !!langChainLLM,
         currentConfig: AI_CONFIG
       });
 
@@ -1331,12 +1914,13 @@ async function main() {
     res.json({
       name: "dynamic-tool-mcp-http",
       version: "1.0.0",
-      description: "動的ツール管理MCP対応サーバー（HTTP版）+ AIエージェント + アイコン対応 + ローカルLLM対応 + .env管理機能",
+      description: "動的ツール管理MCP対応サーバー（HTTP版）+ AIエージェント + アイコン対応 + ローカルLLM対応（LangChain.js Agent） + .env管理機能",
       transport: "streamable-http",
       loadedTools: toolManager.tools.size,
       toolsDirectory: TOOLS_DIR,
       aiAgent: !!aiAgent,
       aiConfig: aiAgent ? AI_CONFIG : null,
+      langChainEnabled: AI_CONFIG.provider === 'localllm' && !!langChainLLM,
       endpoints: {
         mcp: `/mcp`,
         health: `/health`,
@@ -1433,7 +2017,7 @@ async function main() {
 
   // HTTPサーバー起動
   const httpServer = app.listen(PORT, HOST, () => {
-    console.log(`🚀 Dynamic Tool MCP Server + AI Agent（.env管理対応版）が起動しました`);
+    console.log(`🚀 Dynamic Tool MCP Server + AI Agent（LangChain.js対応版）が起動しました`);
     console.log(`   URL: http://${HOST}:${PORT}`);
     console.log(`   MCP Endpoint: http://${HOST}:${PORT}/mcp`);
     console.log(`   AI Agent: http://${HOST}:${PORT}/agent`);
@@ -1451,6 +2035,7 @@ async function main() {
       if (AI_CONFIG.provider === 'localllm') {
         console.log(`   🔗 ローカルLLM: ${AI_CONFIG.localLlmUrl}`);
         console.log(`   📦 モデル: ${AI_CONFIG.localLlmModel}`);
+        console.log(`   🦜 LangChain.js: ${!!langChainLLM ? '有効' : '無効'}`);
       } else {
         console.log(`   📦 モデル: ${AI_CONFIG.model}`);
       }

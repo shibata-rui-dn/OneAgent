@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { 
-  Send, Bot, User, Settings, Plus, Wrench, Loader, AlertCircle, 
-  CheckCircle, X, Edit3, Trash2, Copy, Save, RefreshCw, 
-  MessageSquare, Zap, Palette, Server, Key, Globe
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import {
+  Send, Bot, User, Settings, Plus, Wrench, Loader, AlertCircle,
+  CheckCircle, X, Edit3, Trash2, Copy, Save, RefreshCw,
+  MessageSquare, Zap, Palette, Server, Key, Globe, Brain,
+  Lightbulb, Cog, Eye, Target, Cpu
 } from 'lucide-react';
 
 const API_BASE_URL = 'http://localhost:3000';
@@ -32,6 +33,168 @@ const getAnimalEmoji = (name) => {
   return emojiMap[name] || '🐾';
 };
 
+// ツールアイコンコンポーネント（メモ化）
+const ToolIcon = React.memo(({ toolName, className = "w-6 h-6", toolIcons }) => {
+  const iconSvg = toolIcons.get(toolName);
+
+  if (iconSvg) {
+    return (
+      <div
+        className={className}
+        dangerouslySetInnerHTML={{ __html: iconSvg }}
+      />
+    );
+  }
+
+  return <Wrench className={className} />;
+});
+
+// メッセージコンポーネント（メモ化）
+const Message = React.memo(({ message, agentConfig, processMessageContent }) => {
+  const isUser = message.role === 'user';
+
+  return (
+    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-6`}>
+      <div className={`flex items-start max-w-5xl ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
+        <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center shadow-md ${isUser ? 'bg-gradient-to-r from-blue-500 to-blue-600 ml-3' : 'bg-gradient-to-r from-gray-500 to-gray-600 mr-3'
+          }`}>
+          {isUser ? <User size={18} className="text-white" /> : <Bot size={18} className="text-white" />}
+        </div>
+
+        <div className={`rounded-2xl px-6 py-4 shadow-sm max-w-full ${isUser
+            ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white'
+            : 'bg-white text-gray-800 border border-gray-200'
+          }`}>
+          <div className="break-words">
+            {isUser ? (
+              <>
+                <div className="whitespace-pre-wrap">{message.content}</div>
+                {message.streaming && (
+                  <span className="inline-block w-2 h-5 bg-gray-300 animate-pulse ml-1 rounded"></span>
+                )}
+              </>
+            ) : (
+              <div>
+                {processMessageContent(message.content)}
+                {message.streaming && (
+                  <div className="flex items-center mt-2 text-gray-500">
+                    <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-gray-400 mr-2"></div>
+                    <span className="text-sm">処理中...</span>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* ツール実行情報の詳細表示 */}
+          {message.toolCalls && message.toolCalls.length > 0 && (
+            <div className="mt-4 pt-3 border-t border-gray-200">
+              <div className="text-sm font-semibold text-gray-600 mb-2 flex items-center">
+                <Wrench className="w-4 h-4 mr-1" />
+                ツール実行詳細
+              </div>
+              <div className="space-y-2">
+                {message.toolCalls.map((tool, index) => (
+                  <div key={index} className="bg-gray-50 rounded-lg p-3 text-sm">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-medium text-gray-800">{tool.name}</span>
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                        tool.status === 'completed' ? 'bg-green-100 text-green-700' :
+                        tool.status === 'error' ? 'bg-red-100 text-red-700' :
+                        'bg-yellow-100 text-yellow-700'
+                      }`}>
+                        {tool.status === 'completed' ? '完了' :
+                         tool.status === 'error' ? 'エラー' : '実行中'}
+                      </span>
+                    </div>
+                    {tool.result && (
+                      <div className="text-gray-600 mt-1">
+                        <strong>結果:</strong> {tool.result}
+                      </div>
+                    )}
+                    {tool.error && (
+                      <div className="text-red-600 mt-1">
+                        <strong>エラー:</strong> {tool.error}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="text-xs text-gray-400 mt-3 flex items-center justify-between">
+            <span>{message.timestamp.toLocaleTimeString()}</span>
+            {!isUser && agentConfig?.langChainEnabled && (
+              <span className="bg-purple-100 text-purple-700 px-2 py-1 rounded-full text-xs font-medium">
+                LangChain Agent
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+});
+
+// ツールボタンコンポーネント（メモ化）
+const ToolButton = React.memo(({ tool, isSelected, onToggle, toolIcons }) => (
+  <button
+    onClick={() => onToggle(tool.name)}
+    className={`p-3 rounded-lg border-2 transition-all duration-300 flex items-center space-x-3 hover:shadow-md ${isSelected
+      ? 'border-blue-500 bg-gradient-to-r from-blue-50 to-blue-100 shadow-sm'
+      : 'border-gray-200 hover:border-gray-300 bg-white'
+      }`}
+    title={tool.description}
+  >
+    <div className="relative">
+      <ToolIcon toolName={tool.name} className="w-8 h-8 flex-shrink-0" toolIcons={toolIcons} />
+      {isSelected && (
+        <div className="absolute -top-1 -right-1 w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center">
+          <CheckCircle size={10} className="text-white" />
+        </div>
+      )}
+    </div>
+    <div className="flex-1 text-left min-w-0">
+      <div className={`text-sm font-semibold truncate ${isSelected ? 'text-blue-700' : 'text-gray-700'
+        }`}>
+        {tool.name}
+      </div>
+      <div className={`text-xs mt-1 line-clamp-2 ${isSelected ? 'text-blue-600' : 'text-gray-500'
+        }`}>
+        {tool.description}
+      </div>
+    </div>
+  </button>
+));
+
+// ページアイコンコンポーネント（メモ化）
+const PageIcon = React.memo(({ page, isActive, onSelect, onDelete, canDelete }) => (
+  <div className="relative group">
+    <button
+      onClick={() => onSelect(page.id)}
+      className={`w-12 h-12 rounded-xl flex items-center justify-center transition-all duration-300 shadow-md hover:shadow-lg transform hover:scale-105 ${isActive
+        ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-lg'
+        : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+        }`}
+      title={page.name}
+    >
+      <span className="text-xl">{getAnimalEmoji(page.name)}</span>
+    </button>
+
+    {/* ページ削除ボタン */}
+    {canDelete && (
+      <button
+        onClick={() => onDelete(page.id)}
+        className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full items-center justify-center hidden group-hover:flex hover:bg-red-600 shadow-md transition-all duration-200"
+        title="ページを削除"
+      >
+        <X size={12} className="text-white" />
+      </button>
+    )}
+  </div>
+));
+
 const MultiPageAgentChat = () => {
   // State管理
   const [pages, setPages] = useState([]);
@@ -40,7 +203,7 @@ const MultiPageAgentChat = () => {
   const [toolIcons, setToolIcons] = useState(new Map());
   const [serverStatus, setServerStatus] = useState('connecting');
   const [agentConfig, setAgentConfig] = useState(null);
-  
+
   // UI状態
   const [showSettings, setShowSettings] = useState(false);
   const [editingPageName, setEditingPageName] = useState(null);
@@ -50,37 +213,207 @@ const MultiPageAgentChat = () => {
   const messagesEndRef = useRef(null);
   const abortControllerRef = useRef(null);
 
+  // メモ化された値
+  const currentPage = useMemo(() => {
+    return pages.find(p => p.id === currentPageId);
+  }, [pages, currentPageId]);
+
+  const canDeletePages = useMemo(() => {
+    return pages.length > 1;
+  }, [pages.length]);
+
+  // スクロール関数（メモ化）
+  const scrollToBottom = useCallback(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, []);
+
+  // メッセージ内容処理（メモ化）
+  const processMessageContent = useCallback((content) => {
+    const lines = content.split('\n');
+    const processedElements = [];
+    let currentIndex = 0;
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const trimmedLine = line.trim();
+
+      if (!trimmedLine) {
+        continue;
+      }
+
+      // 利用可能なツール表示
+      if (trimmedLine.includes('🔧 **利用可能なツール**')) {
+        processedElements.push(
+          <div key={currentIndex++} className="my-3 p-3 bg-blue-50 border-l-4 border-blue-400 rounded-r-lg">
+            <div className="flex items-center text-blue-800 font-medium">
+              <Wrench className="w-4 h-4 mr-2" />
+              {trimmedLine.replace(/🔧 \*\*利用可能なツール\*\*:/, '利用可能なツール:')}
+            </div>
+          </div>
+        );
+        continue;
+      }
+
+      // 思考プロセス
+      if (trimmedLine.includes('💭 **思考')) {
+        processedElements.push(
+          <div key={currentIndex++} className="my-3 p-4 bg-indigo-50 border-l-4 border-indigo-400 rounded-r-lg">
+            <div className="flex items-start">
+              <Brain className="w-5 h-5 mr-2 text-indigo-600 mt-0.5 flex-shrink-0" />
+              <div className="flex-1">
+                <div className="text-indigo-800 font-semibold text-sm mb-1">
+                  {trimmedLine.replace(/💭 \*\*思考\d*\*\*:?/, '思考プロセス')}
+                </div>
+                <div className="text-indigo-700 text-sm">
+                  {line.replace(/💭 \*\*思考\d*\*\*:?\s*/, '')}
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+        continue;
+      }
+
+      // アクション
+      if (trimmedLine.includes('⚡ **アクション')) {
+        processedElements.push(
+          <div key={currentIndex++} className="my-3 p-4 bg-amber-50 border-l-4 border-amber-400 rounded-r-lg">
+            <div className="flex items-start">
+              <Zap className="w-5 h-5 mr-2 text-amber-600 mt-0.5 flex-shrink-0" />
+              <div className="flex-1">
+                <div className="text-amber-800 font-semibold text-sm mb-1">
+                  実行アクション
+                </div>
+                <div className="text-amber-700 text-sm">
+                  {line.replace(/⚡ \*\*アクション\d*\*\*:?\s*/, '')}
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+        continue;
+      }
+
+      // 観察結果
+      if (trimmedLine.includes('✅ **観察')) {
+        processedElements.push(
+          <div key={currentIndex++} className="my-3 p-4 bg-emerald-50 border-l-4 border-emerald-400 rounded-r-lg">
+            <div className="flex items-start">
+              <Eye className="w-5 h-5 mr-2 text-emerald-600 mt-0.5 flex-shrink-0" />
+              <div className="flex-1">
+                <div className="text-emerald-800 font-semibold text-sm mb-1">
+                  観察結果
+                </div>
+                <div className="text-emerald-700 text-sm">
+                  {line.replace(/✅ \*\*観察\d*\*\*:?\s*/, '')}
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+        continue;
+      }
+
+      // 最終回答
+      if (trimmedLine.includes('📋 **最終回答**')) {
+        processedElements.push(
+          <div key={currentIndex++} className="my-4 p-4 bg-purple-50 border-2 border-purple-400 rounded-lg">
+            <div className="flex items-center text-purple-800 font-bold text-base mb-2">
+              <Target className="w-5 h-5 mr-2" />
+              最終回答
+            </div>
+          </div>
+        );
+        continue;
+      }
+
+      // AI Agent分析開始
+      if (trimmedLine.includes('🤖 **AI Agent**')) {
+        processedElements.push(
+          <div key={currentIndex++} className="my-3 p-3 bg-gray-50 border-l-4 border-gray-400 rounded-r-lg">
+            <div className="flex items-center text-gray-700 font-medium">
+              <Cpu className="w-4 h-4 mr-2" />
+              <div className="animate-pulse">AI Agent 分析中...</div>
+            </div>
+          </div>
+        );
+        continue;
+      }
+
+      // ツール実行中
+      if (trimmedLine.includes('🔧 ') && trimmedLine.includes('実行中')) {
+        const toolName = trimmedLine.match(/🔧 \*\*(.+?)\*\*/)?.[1] || 'ツール';
+        processedElements.push(
+          <div key={currentIndex++} className="my-2 p-3 bg-blue-50 rounded-lg border border-blue-200">
+            <div className="flex items-center text-blue-700 font-medium">
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2"></div>
+              <Cog className="w-4 h-4 mr-2" />
+              {toolName} 実行中...
+            </div>
+          </div>
+        );
+        continue;
+      }
+
+      // ツールリスト表示
+      if (trimmedLine.startsWith('• ')) {
+        processedElements.push(
+          <div key={currentIndex++} className="ml-4 text-sm text-gray-600 flex items-center">
+            <div className="w-2 h-2 bg-blue-400 rounded-full mr-2"></div>
+            {trimmedLine.replace('• ', '')}
+          </div>
+        );
+        continue;
+      }
+
+      // 通常のテキスト
+      if (trimmedLine) {
+        processedElements.push(
+          <div key={currentIndex++} className="my-1 text-gray-800">
+            {line}
+          </div>
+        );
+      }
+    }
+
+    return processedElements.length > 0 ? processedElements : [
+      <div key={0} className="text-gray-800">{content}</div>
+    ];
+  }, []);
+
   // 初期化
   useEffect(() => {
     initializeApp();
   }, []);
 
-  // メッセージが更新されたら最下部にスクロール
+  // メッセージが更新されたら最下部にスクロール（最適化）
   useEffect(() => {
-    scrollToBottom();
-  }, [currentPageId, pages]);
+    if (currentPage?.messages?.length > 0) {
+      scrollToBottom();
+    }
+  }, [currentPage?.messages?.length, scrollToBottom]);
 
   const initializeApp = async () => {
     try {
       await checkServerHealth();
       await fetchTools();
       await fetchAgentConfig();
-      
+
       setServerStatus('connected');
-      
+
       // 初期ページがない場合のみ作成
       if (pages.length === 0) {
         const initialPage = createInitialPage();
         setPages([initialPage]);
         setCurrentPageId(initialPage.id);
       }
-      
+
       setIsInitialized(true);
-      
+
     } catch (error) {
       console.error('アプリ初期化エラー:', error);
       setServerStatus('error');
-      
+
       // エラーが発生しても初期ページは作成
       if (pages.length === 0) {
         const initialPage = createInitialPage();
@@ -91,25 +424,24 @@ const MultiPageAgentChat = () => {
     }
   };
 
-  const createInitialPage = () => {
+  const createInitialPage = useCallback(() => {
     return {
       id: Date.now().toString(),
       name: generateRandomAnimalName(),
       messages: [],
-      selectedTools: new Set(), // 初期は空、後で更新
+      selectedTools: new Set(),
       settings: {
         streaming: true,
         temperature: 0.7,
         model: 'gpt-4o-mini'
       }
     };
-  };
+  }, []);
 
-  // 初期化完了後とツール読み込み後にツール選択を更新
+  // 初期化完了後とツール読み込み後にツール選択を更新（最適化）
   useEffect(() => {
     if (isInitialized && tools.length > 0) {
       setPages(prev => prev.map(page => {
-        // selectedToolsが空の場合のみ全ツールを選択
         if (page.selectedTools.size === 0) {
           return {
             ...page,
@@ -119,17 +451,17 @@ const MultiPageAgentChat = () => {
         return page;
       }));
     }
-  }, [isInitialized, tools]);
+  }, [isInitialized, tools.length]); // tools.lengthのみを監視
 
-  const checkServerHealth = async () => {
+  const checkServerHealth = useCallback(async () => {
     const response = await fetch(`${API_BASE_URL}/health`);
     if (!response.ok) {
       throw new Error('サーバーに接続できません');
     }
     return response.json();
-  };
+  }, []);
 
-  const fetchTools = async () => {
+  const fetchTools = useCallback(async () => {
     try {
       const response = await fetch(`${API_BASE_URL}/tools`);
       const data = await response.json();
@@ -138,9 +470,9 @@ const MultiPageAgentChat = () => {
     } catch (error) {
       console.error('ツール取得エラー:', error);
     }
-  };
+  }, []);
 
-  const loadToolIcons = async (toolsList) => {
+  const loadToolIcons = useCallback(async (toolsList) => {
     const iconPromises = toolsList
       .filter(tool => tool.hasIcon)
       .map(async (tool) => {
@@ -158,17 +490,17 @@ const MultiPageAgentChat = () => {
 
     const results = await Promise.all(iconPromises);
     const iconMap = new Map();
-    
+
     results.forEach(result => {
       if (result) {
         iconMap.set(result[0], result[1]);
       }
     });
-    
-    setToolIcons(iconMap);
-  };
 
-  const fetchAgentConfig = async () => {
+    setToolIcons(iconMap);
+  }, []);
+
+  const fetchAgentConfig = useCallback(async () => {
     try {
       const response = await fetch(`${API_BASE_URL}/agent/config`);
       const data = await response.json();
@@ -176,48 +508,44 @@ const MultiPageAgentChat = () => {
     } catch (error) {
       console.error('エージェント設定取得エラー:', error);
     }
-  };
+  }, []);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
-
-  // ページ管理
-  const createNewPage = () => {
+  // ページ管理（メモ化）
+  const createNewPage = useCallback(() => {
     const newPage = {
       id: Date.now().toString(),
       name: generateRandomAnimalName(),
       messages: [],
-      selectedTools: new Set(tools.map(t => t.name)), // 全ツール選択で開始
+      selectedTools: new Set(tools.map(t => t.name)),
       settings: {
         streaming: true,
         temperature: 0.7,
         model: 'gpt-4o-mini'
       }
     };
-    
+
     setPages(prev => [...prev, newPage]);
     setCurrentPageId(newPage.id);
-  };
+  }, [tools]);
 
-  const deletePage = (pageId) => {
-    if (pages.length <= 1) return; // 最後のページは削除しない
-    
+  const deletePage = useCallback((pageId) => {
+    if (pages.length <= 1) return;
+
     setPages(prev => prev.filter(p => p.id !== pageId));
-    
+
     if (currentPageId === pageId) {
       const remainingPages = pages.filter(p => p.id !== pageId);
       setCurrentPageId(remainingPages[0]?.id || null);
     }
-  };
+  }, [pages.length, currentPageId, pages]);
 
-  const updatePageName = (pageId, newName) => {
-    setPages(prev => prev.map(page => 
+  const updatePageName = useCallback((pageId, newName) => {
+    setPages(prev => prev.map(page =>
       page.id === pageId ? { ...page, name: newName } : page
     ));
-  };
+  }, []);
 
-  const toggleToolInPage = (pageId, toolName) => {
+  const toggleToolInPage = useCallback((pageId, toolName) => {
     setPages(prev => prev.map(page => {
       if (page.id === pageId) {
         const newSelectedTools = new Set(page.selectedTools);
@@ -230,16 +558,10 @@ const MultiPageAgentChat = () => {
       }
       return page;
     }));
-  };
+  }, []);
 
-  // 現在のページを取得
-  const getCurrentPage = () => {
-    return pages.find(p => p.id === currentPageId);
-  };
-
-  // メッセージ送信
-  const handleSendMessage = async (message) => {
-    const currentPage = getCurrentPage();
+  // メッセージ送信（メモ化）
+  const handleSendMessage = useCallback(async (message) => {
     if (!currentPage || !message.trim()) return;
 
     const userMessage = {
@@ -250,8 +572,8 @@ const MultiPageAgentChat = () => {
     };
 
     // ページのメッセージを更新
-    setPages(prev => prev.map(page => 
-      page.id === currentPageId 
+    setPages(prev => prev.map(page =>
+      page.id === currentPageId
         ? { ...page, messages: [...page.messages, userMessage] }
         : page
     ));
@@ -264,25 +586,25 @@ const MultiPageAgentChat = () => {
       }
     } catch (error) {
       console.error('メッセージ送信エラー:', error);
-      
+
       const errorMessage = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
         content: `エラーが発生しました: ${error instanceof Error ? error.message : '不明なエラー'}`,
         timestamp: new Date()
       };
-      
-      setPages(prev => prev.map(page => 
-        page.id === currentPageId 
+
+      setPages(prev => prev.map(page =>
+        page.id === currentPageId
           ? { ...page, messages: [...page.messages, errorMessage] }
           : page
       ));
     }
-  };
+  }, [currentPage, currentPageId]);
 
-  const handleStreamingResponse = async (query, currentPage) => {
+  const handleStreamingResponse = useCallback(async (query, currentPage) => {
     abortControllerRef.current = new AbortController();
-    
+
     const response = await fetch(`${API_BASE_URL}/agent`, {
       method: 'POST',
       headers: {
@@ -308,11 +630,12 @@ const MultiPageAgentChat = () => {
       content: '',
       timestamp: new Date(),
       streaming: true,
-      toolCalls: []
+      toolCalls: [],
+      reasoningSteps: []
     };
 
-    setPages(prev => prev.map(page => 
-      page.id === currentPageId 
+    setPages(prev => prev.map(page =>
+      page.id === currentPageId
         ? { ...page, messages: [...page.messages, assistantMessage] }
         : page
     ));
@@ -326,20 +649,20 @@ const MultiPageAgentChat = () => {
 
     try {
       let buffer = '';
-      
+
       while (true) {
         const { done, value } = await reader.read();
-        
+
         if (done) break;
-        
+
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split('\n');
         buffer = lines.pop() || '';
-        
+
         for (const line of lines) {
           if (line.startsWith('data: ')) {
             const data = line.slice(6).trim();
-            if (data) {
+            if (data && data !== '{"type": "end"}') {
               try {
                 const chunk = JSON.parse(data);
                 updateStreamingMessage(assistantMessage.id, chunk);
@@ -352,73 +675,94 @@ const MultiPageAgentChat = () => {
       }
     } finally {
       reader.releaseLock();
-      
+
       // ストリーミング完了
-      setPages(prev => prev.map(page => 
-        page.id === currentPageId 
+      setPages(prev => prev.map(page =>
+        page.id === currentPageId
           ? {
-              ...page,
-              messages: page.messages.map(msg => 
-                msg.id === assistantMessage.id 
-                  ? { ...msg, streaming: false }
-                  : msg
-              )
-            }
+            ...page,
+            messages: page.messages.map(msg =>
+              msg.id === assistantMessage.id
+                ? { ...msg, streaming: false }
+                : msg
+            )
+          }
           : page
       ));
     }
-  };
+  }, [currentPageId]);
 
-  const updateStreamingMessage = (messageId, chunk) => {
+  const updateStreamingMessage = useCallback((messageId, chunk) => {
     setPages(prev => prev.map(page => {
       if (page.id !== currentPageId) return page;
-      
+
       return {
         ...page,
         messages: page.messages.map(msg => {
           if (msg.id !== messageId) return msg;
-          
+
           const updatedMsg = { ...msg };
-          
+
           switch (chunk.type) {
             case 'text':
               updatedMsg.content += chunk.content;
               break;
+
             case 'tool_call_start':
               if (!updatedMsg.toolCalls) updatedMsg.toolCalls = [];
-              updatedMsg.toolCalls.push({
-                name: chunk.tool_name,
-                arguments: chunk.tool_args,
-              });
+
+              let existingToolCall = updatedMsg.toolCalls.find(tc =>
+                tc.name === chunk.tool_name && !tc.result && !tc.error
+              );
+
+              if (!existingToolCall) {
+                updatedMsg.toolCalls.push({
+                  name: chunk.tool_name,
+                  arguments: chunk.tool_args,
+                  status: 'executing',
+                  timestamp: new Date().toISOString()
+                });
+              }
               break;
+
             case 'tool_call_result':
               if (updatedMsg.toolCalls) {
-                const toolCall = updatedMsg.toolCalls.find(tc => tc.name === chunk.tool_name);
+                const toolCall = updatedMsg.toolCalls.find(tc =>
+                  tc.name === chunk.tool_name && tc.status === 'executing'
+                );
                 if (toolCall) {
                   toolCall.result = chunk.result;
+                  toolCall.status = 'completed';
+                  toolCall.completedAt = new Date().toISOString();
                 }
               }
               break;
+
             case 'tool_call_error':
               if (updatedMsg.toolCalls) {
-                const toolCall = updatedMsg.toolCalls.find(tc => tc.name === chunk.tool_name);
+                const toolCall = updatedMsg.toolCalls.find(tc =>
+                  tc.name === chunk.tool_name && tc.status === 'executing'
+                );
                 if (toolCall) {
                   toolCall.error = chunk.error;
+                  toolCall.status = 'error';
+                  toolCall.errorAt = new Date().toISOString();
                 }
               }
               break;
+
             case 'error':
-              updatedMsg.content += `\n[エラー: ${chunk.content}]`;
+              updatedMsg.content += `\n❌ **エラー**: ${chunk.content}\n`;
               break;
           }
-          
+
           return updatedMsg;
         })
       };
     }));
-  };
+  }, [currentPageId]);
 
-  const handleNonStreamingResponse = async (query, currentPage) => {
+  const handleNonStreamingResponse = useCallback(async (query, currentPage) => {
     const response = await fetch(`${API_BASE_URL}/agent`, {
       method: 'POST',
       headers: {
@@ -438,7 +782,7 @@ const MultiPageAgentChat = () => {
     }
 
     const result = await response.json();
-    
+
     const assistantMessage = {
       id: Date.now().toString(),
       role: 'assistant',
@@ -447,31 +791,15 @@ const MultiPageAgentChat = () => {
       toolCalls: result.tool_calls || []
     };
 
-    setPages(prev => prev.map(page => 
-      page.id === currentPageId 
+    setPages(prev => prev.map(page =>
+      page.id === currentPageId
         ? { ...page, messages: [...page.messages, assistantMessage] }
         : page
     ));
-  };
-
-  // ツールアイコンコンポーネント
-  const ToolIcon = ({ toolName, className = "w-6 h-6" }) => {
-    const iconSvg = toolIcons.get(toolName);
-    
-    if (iconSvg) {
-      return (
-        <div 
-          className={className}
-          dangerouslySetInnerHTML={{ __html: iconSvg }}
-        />
-      );
-    }
-    
-    return <Wrench className={className} />;
-  };
+  }, [currentPageId]);
 
   // コンポーネント
-  const IconBar = () => (
+  const IconBar = React.memo(() => (
     <div className="w-16 bg-gradient-to-b from-gray-900 to-gray-800 flex flex-col items-center py-4 space-y-3 shadow-lg">
       {/* ページ作成ボタン */}
       <button
@@ -485,30 +813,14 @@ const MultiPageAgentChat = () => {
       {/* ページアイコン */}
       <div className="flex-1 space-y-3 overflow-y-auto">
         {pages.map((page) => (
-          <div key={page.id} className="relative group">
-            <button
-              onClick={() => setCurrentPageId(page.id)}
-              className={`w-12 h-12 rounded-xl flex items-center justify-center transition-all duration-300 shadow-md hover:shadow-lg transform hover:scale-105 ${
-                currentPageId === page.id 
-                  ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-lg' 
-                  : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-              }`}
-              title={page.name}
-            >
-              <span className="text-xl">{getAnimalEmoji(page.name)}</span>
-            </button>
-            
-            {/* ページ削除ボタン */}
-            {pages.length > 1 && (
-              <button
-                onClick={() => deletePage(page.id)}
-                className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full items-center justify-center hidden group-hover:flex hover:bg-red-600 shadow-md transition-all duration-200"
-                title="ページを削除"
-              >
-                <X size={12} className="text-white" />
-              </button>
-            )}
-          </div>
+          <PageIcon
+            key={page.id}
+            page={page}
+            isActive={currentPageId === page.id}
+            onSelect={setCurrentPageId}
+            onDelete={deletePage}
+            canDelete={canDeletePages}
+          />
         ))}
       </div>
 
@@ -521,187 +833,130 @@ const MultiPageAgentChat = () => {
         <Settings size={20} className="text-gray-300" />
       </button>
     </div>
-  );
+  ));
 
-  const ToolPalette = ({ page }) => (
-    <div className="w-72 bg-white border-r border-gray-200 flex flex-col shadow-sm">
-      <div className="p-4 border-b bg-gradient-to-r from-blue-50 to-purple-50">
-        <h3 className="font-bold text-gray-800 mb-2 flex items-center">
-          <Palette className="w-5 h-5 mr-2 text-blue-600" />
-          ツールパレット
-        </h3>
-        <div className="text-sm text-gray-600 flex items-center justify-between">
-          <span>選択中: {page?.selectedTools?.size || 0}/{tools.length}</span>
-          <div className="flex items-center">
-            <div className={`w-2 h-2 rounded-full mr-1 ${
-              serverStatus === 'connected' ? 'bg-green-500' : 
-              serverStatus === 'error' ? 'bg-red-500' : 'bg-yellow-500'
-            }`}></div>
-            <span className="text-xs">
-              {serverStatus === 'connected' ? 'オンライン' : 
-               serverStatus === 'error' ? 'オフライン' : '接続中'}
-            </span>
+  const ToolPalette = React.memo(({ page }) => {
+    const handleSelectAll = useCallback(() => {
+      setPages(prev => prev.map(p =>
+        p.id === page.id
+          ? { ...p, selectedTools: new Set(tools.map(t => t.name)) }
+          : p
+      ));
+    }, [page.id, tools]);
+
+    const handleDeselectAll = useCallback(() => {
+      setPages(prev => prev.map(p =>
+        p.id === page.id
+          ? { ...p, selectedTools: new Set() }
+          : p
+      ));
+    }, [page.id]);
+
+    const handleToggleTool = useCallback((toolName) => {
+      toggleToolInPage(page.id, toolName);
+    }, [page.id, toggleToolInPage]);
+
+    return (
+      <div className="w-72 bg-white border-r border-gray-200 flex flex-col shadow-sm">
+        <div className="p-4 border-b bg-gradient-to-r from-blue-50 to-purple-50">
+          <h3 className="font-bold text-gray-800 mb-2 flex items-center">
+            <Palette className="w-5 h-5 mr-2 text-blue-600" />
+            ツールパレット
+          </h3>
+          <div className="text-sm text-gray-600 flex items-center justify-between">
+            <span>選択中: {page?.selectedTools?.size || 0}/{tools.length}</span>
+            <div className="flex items-center">
+              <div className={`w-2 h-2 rounded-full mr-1 ${serverStatus === 'connected' ? 'bg-green-500' :
+                serverStatus === 'error' ? 'bg-red-500' : 'bg-yellow-500'
+                }`}></div>
+              <span className="text-xs">
+                {serverStatus === 'connected' ? 'オンライン' :
+                  serverStatus === 'error' ? 'オフライン' : '接続中'}
+              </span>
+            </div>
           </div>
         </div>
-      </div>
-      
-      <div className="flex-1 p-3 overflow-y-auto">
-        <div className="grid grid-cols-1 gap-2">
-          {tools.map((tool) => (
+
+        <div className="flex-1 p-3 overflow-y-auto">
+          <div className="grid grid-cols-1 gap-2">
+            {tools.map((tool) => (
+              <ToolButton
+                key={tool.name}
+                tool={tool}
+                isSelected={page?.selectedTools?.has(tool.name) || false}
+                onToggle={handleToggleTool}
+                toolIcons={toolIcons}
+              />
+            ))}
+          </div>
+
+          {tools.length === 0 && (
+            <div className="text-center text-gray-500 mt-8 p-6">
+              <Wrench size={40} className="mx-auto mb-4 text-gray-300" />
+              <p className="text-sm font-medium">ツールが見つかりません</p>
+              <p className="text-xs mt-1">サーバーに接続を確認してください</p>
+            </div>
+          )}
+        </div>
+
+        {/* 一括操作ボタン */}
+        <div className="p-3 border-t bg-gray-50">
+          <div className="flex space-x-2">
             <button
-              key={tool.name}
-              onClick={() => toggleToolInPage(page.id, tool.name)}
-              className={`p-3 rounded-lg border-2 transition-all duration-300 flex items-center space-x-3 hover:shadow-md ${
-                page?.selectedTools?.has(tool.name)
-                  ? 'border-blue-500 bg-gradient-to-r from-blue-50 to-blue-100 shadow-sm'
-                  : 'border-gray-200 hover:border-gray-300 bg-white'
-              }`}
-              title={tool.description}
+              onClick={handleSelectAll}
+              className="flex-1 px-3 py-2 bg-blue-100 text-blue-700 rounded-lg text-sm font-medium hover:bg-blue-200 transition-colors duration-200"
             >
-              <div className="relative">
-                <ToolIcon toolName={tool.name} className="w-8 h-8 flex-shrink-0" />
-                {page?.selectedTools?.has(tool.name) && (
-                  <div className="absolute -top-1 -right-1 w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center">
-                    <CheckCircle size={10} className="text-white" />
-                  </div>
-                )}
-              </div>
-              <div className="flex-1 text-left min-w-0">
-                <div className={`text-sm font-semibold truncate ${
-                  page?.selectedTools?.has(tool.name) ? 'text-blue-700' : 'text-gray-700'
-                }`}>
-                  {tool.name}
-                </div>
-                <div className={`text-xs mt-1 line-clamp-2 ${
-                  page?.selectedTools?.has(tool.name) ? 'text-blue-600' : 'text-gray-500'
-                }`}>
-                  {tool.description}
-                </div>
-              </div>
+              すべて選択
             </button>
-          ))}
-        </div>
-        
-        {tools.length === 0 && (
-          <div className="text-center text-gray-500 mt-8 p-6">
-            <Wrench size={40} className="mx-auto mb-4 text-gray-300" />
-            <p className="text-sm font-medium">ツールが見つかりません</p>
-            <p className="text-xs mt-1">サーバーに接続を確認してください</p>
+            <button
+              onClick={handleDeselectAll}
+              className="flex-1 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200 transition-colors duration-200"
+            >
+              すべて解除
+            </button>
           </div>
-        )}
-      </div>
-      
-      {/* 一括操作ボタン */}
-      <div className="p-3 border-t bg-gray-50">
-        <div className="flex space-x-2">
-          <button
-            onClick={() => {
-              setPages(prev => prev.map(p => 
-                p.id === page.id 
-                  ? { ...p, selectedTools: new Set(tools.map(t => t.name)) }
-                  : p
-              ));
-            }}
-            className="flex-1 px-3 py-2 bg-blue-100 text-blue-700 rounded-lg text-sm font-medium hover:bg-blue-200 transition-colors duration-200"
-          >
-            すべて選択
-          </button>
-          <button
-            onClick={() => {
-              setPages(prev => prev.map(p => 
-                p.id === page.id 
-                  ? { ...p, selectedTools: new Set() }
-                  : p
-              ));
-            }}
-            className="flex-1 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200 transition-colors duration-200"
-          >
-            すべて解除
-          </button>
         </div>
       </div>
-    </div>
-  );
+    );
+  });
 
-  const ChatArea = ({ page }) => {
+  const ChatArea = React.memo(({ page }) => {
     const [inputMessage, setInputMessage] = useState('');
     const [isLoading, setIsLoading] = useState(false);
 
-    const handleSubmit = async () => {
+    const handleSubmit = useCallback(async () => {
       if (!inputMessage.trim() || isLoading) return;
-      
+
       setIsLoading(true);
       await handleSendMessage(inputMessage);
       setInputMessage('');
       setIsLoading(false);
-    };
+    }, [inputMessage, isLoading, handleSendMessage]);
 
-    const renderMessage = (message) => {
-      const isUser = message.role === 'user';
-      
-      return (
-        <div key={message.id} className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-6`}>
-          <div className={`flex items-start max-w-5xl ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
-            <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center shadow-md ${
-              isUser ? 'bg-gradient-to-r from-blue-500 to-blue-600 ml-3' : 'bg-gradient-to-r from-gray-500 to-gray-600 mr-3'
-            }`}>
-              {isUser ? <User size={18} className="text-white" /> : <Bot size={18} className="text-white" />}
-            </div>
-            
-            <div className={`rounded-2xl px-6 py-4 shadow-sm ${
-              isUser 
-                ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white' 
-                : 'bg-white text-gray-800 border border-gray-200'
-            }`}>
-              <div className="whitespace-pre-wrap break-words">
-                {message.content}
-                {message.streaming && (
-                  <span className="inline-block w-2 h-5 bg-gray-400 animate-pulse ml-1 rounded"></span>
-                )}
-              </div>
-              
-              {message.toolCalls && message.toolCalls.length > 0 && (
-                <div className="mt-4 pt-3 border-t border-gray-200">
-                  <div className="text-sm text-gray-600 mb-3 flex items-center font-medium">
-                    <Zap size={16} className="mr-2 text-orange-500" />
-                    使用されたツール
-                  </div>
-                  
-                  {message.toolCalls.map((toolCall, index) => (
-                    <div key={index} className="mb-3 p-3 bg-gray-50 rounded-lg text-sm border">
-                      <div className="font-semibold text-gray-700 flex items-center mb-2">
-                        <ToolIcon toolName={toolCall.name} className="w-5 h-5 mr-2" />
-                        {toolCall.name}
-                      </div>
-                      
-                      {toolCall.result && (
-                        <div className="text-green-700 flex items-start">
-                          <CheckCircle size={16} className="mr-2 mt-0.5 flex-shrink-0" />
-                          <span className="font-medium">結果:</span>
-                          <span className="ml-1">{toolCall.result}</span>
-                        </div>
-                      )}
-                      
-                      {toolCall.error && (
-                        <div className="text-red-700 flex items-start">
-                          <AlertCircle size={16} className="mr-2 mt-0.5 flex-shrink-0" />
-                          <span className="font-medium">エラー:</span>
-                          <span className="ml-1">{toolCall.error}</span>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-              
-              <div className="text-xs text-gray-400 mt-3">
-                {message.timestamp.toLocaleTimeString()}
-              </div>
-            </div>
-          </div>
-        </div>
-      );
-    };
+    const handleKeyPress = useCallback((e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        handleSubmit();
+      }
+    }, [handleSubmit]);
+
+    const handleNameEdit = useCallback(() => {
+      setEditingPageName(page.id);
+    }, [page.id]);
+
+    const handleNameSave = useCallback(() => {
+      setEditingPageName(null);
+    }, []);
+
+    const handleNameChange = useCallback((e) => {
+      updatePageName(page.id, e.target.value);
+    }, [page.id, updatePageName]);
+
+    const handleNameKeyPress = useCallback((e) => {
+      if (e.key === 'Enter') {
+        handleNameSave();
+      }
+    }, [handleNameSave]);
 
     return (
       <div className="flex-1 flex flex-col bg-gradient-to-br from-gray-50 to-white min-w-0">
@@ -713,38 +968,43 @@ const MultiPageAgentChat = () => {
               <input
                 type="text"
                 value={page.name}
-                onChange={(e) => updatePageName(page.id, e.target.value)}
-                onBlur={() => setEditingPageName(null)}
-                onKeyPress={(e) => e.key === 'Enter' && setEditingPageName(null)}
+                onChange={handleNameChange}
+                onBlur={handleNameSave}
+                onKeyPress={handleNameKeyPress}
                 className="text-xl font-bold bg-transparent border-b-2 border-blue-500 focus:outline-none px-1"
                 autoFocus
               />
             ) : (
-              <h1 
+              <h1
                 className="text-xl font-bold cursor-pointer hover:text-blue-600 transition-colors flex items-center"
-                onClick={() => setEditingPageName(page.id)}
+                onClick={handleNameEdit}
               >
                 {page.name}
                 <Edit3 size={16} className="ml-2 text-gray-400" />
               </h1>
             )}
           </div>
-          
+
           <div className="flex items-center space-x-4">
             <div className="flex items-center space-x-2">
-              <div className={`w-3 h-3 rounded-full ${
-                serverStatus === 'connected' ? 'bg-green-500' :
+              <div className={`w-3 h-3 rounded-full ${serverStatus === 'connected' ? 'bg-green-500' :
                 serverStatus === 'error' ? 'bg-red-500' :
-                'bg-yellow-500'
-              }`} />
+                  'bg-yellow-500'
+                }`} />
               <span className="text-sm text-gray-600">
                 {page?.selectedTools?.size || 0} ツール選択中
               </span>
             </div>
-            <div className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
-              {serverStatus === 'connected' ? 'オンライン' : 
-               serverStatus === 'error' ? 'オフライン' : '接続中'}
+            <div className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full flex items-center">
+              <div className="w-2 h-2 bg-green-400 rounded-full mr-1"></div>
+              {serverStatus === 'connected' ? 'オンライン' :
+                serverStatus === 'error' ? 'オフライン' : '接続中'}
             </div>
+            {agentConfig?.langChainEnabled && (
+              <div className="text-xs text-purple-600 bg-purple-100 px-2 py-1 rounded-full font-medium">
+                LangChain Agent
+              </div>
+            )}
           </div>
         </div>
 
@@ -761,10 +1021,23 @@ const MultiPageAgentChat = () => {
                 <Zap size={16} />
                 <span>{page?.selectedTools?.size || 0}個のツールが利用可能</span>
               </div>
+              {agentConfig?.langChainEnabled && (
+                <div className="inline-flex items-center space-x-2 bg-purple-50 px-4 py-2 rounded-full text-sm text-purple-600 ml-2">
+                  <Brain size={16} />
+                  <span>高度な推論モード有効</span>
+                </div>
+              )}
             </div>
           ) : (
             <div className="space-y-4 max-w-full">
-              {page.messages.map(renderMessage)}
+              {page.messages.map(message => (
+                <Message
+                  key={message.id}
+                  message={message}
+                  agentConfig={agentConfig}
+                  processMessageContent={processMessageContent}
+                />
+              ))}
             </div>
           )}
           <div ref={messagesEndRef} />
@@ -777,17 +1050,12 @@ const MultiPageAgentChat = () => {
               type="text"
               value={inputMessage}
               onChange={(e) => setInputMessage(e.target.value)}
-              onKeyPress={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  handleSubmit();
-                }
-              }}
+              onKeyPress={handleKeyPress}
               placeholder="メッセージを入力してください..."
               className="flex-1 p-4 border-2 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 min-w-0"
               disabled={isLoading || serverStatus !== 'connected'}
             />
-            
+
             <button
               onClick={handleSubmit}
               disabled={!inputMessage.trim() || isLoading || serverStatus !== 'connected'}
@@ -803,15 +1071,14 @@ const MultiPageAgentChat = () => {
         </div>
       </div>
     );
-  };
+  });
 
-  const SettingsModal = () => {
+  const SettingsModal = React.memo(() => {
     const [tempConfig, setTempConfig] = useState({
       provider: agentConfig?.config?.provider || 'openai',
       model: agentConfig?.config?.model || 'gpt-4o-mini',
       temperature: agentConfig?.config?.temperature || 0.7,
       streaming: agentConfig?.config?.streaming !== false,
-      // エンドポイント設定
       openaiApiKey: '',
       azureEndpoint: '',
       azureApiVersion: '2024-02-15-preview',
@@ -819,22 +1086,21 @@ const MultiPageAgentChat = () => {
       localLlmModel: agentConfig?.config?.localLlmModel || 'Qwen/Qwen2.5-Coder-32B-Instruct'
     });
 
-    const [activeTab, setActiveTab] = useState('general'); // general, endpoints, env
+    const [activeTab, setActiveTab] = useState('general');
     const [envData, setEnvData] = useState(null);
     const [envContent, setEnvContent] = useState('');
     const [isLoadingEnv, setIsLoadingEnv] = useState(false);
     const [envStatus, setEnvStatus] = useState('');
 
-    // 設定モーダルが開かれたときに現在の設定を読み込む
+    // 設定モーダルが開かれたときに現在の設定を読み込む（最適化）
     useEffect(() => {
       if (showSettings) {
         loadCurrentSettings();
       }
-    }, [showSettings, agentConfig]);
+    }, [showSettings]);
 
-    const loadCurrentSettings = async () => {
+    const loadCurrentSettings = useCallback(async () => {
       try {
-        // 現在のエージェント設定から基本設定を読み込む
         if (agentConfig?.config) {
           setTempConfig(prev => ({
             ...prev,
@@ -847,7 +1113,6 @@ const MultiPageAgentChat = () => {
           }));
         }
 
-        // .env情報から機密情報以外の設定を読み込む
         const envResponse = await fetch(`${API_BASE_URL}/env`);
         if (envResponse.ok) {
           const envData = await envResponse.json();
@@ -862,10 +1127,9 @@ const MultiPageAgentChat = () => {
       } catch (error) {
         console.error('現在の設定読み込みエラー:', error);
       }
-    };
+    }, [agentConfig]);
 
-    // .env管理機能
-    const fetchEnvData = async () => {
+    const fetchEnvData = useCallback(async () => {
       setIsLoadingEnv(true);
       try {
         const response = await fetch(`${API_BASE_URL}/env`);
@@ -878,9 +1142,9 @@ const MultiPageAgentChat = () => {
         setEnvStatus('エラー: .env取得に失敗しました');
       }
       setIsLoadingEnv(false);
-    };
+    }, []);
 
-    const updateEnvFile = async () => {
+    const updateEnvFile = useCallback(async () => {
       setIsLoadingEnv(true);
       try {
         const response = await fetch(`${API_BASE_URL}/env`, {
@@ -892,12 +1156,12 @@ const MultiPageAgentChat = () => {
             envContent: envContent
           })
         });
-        
+
         const result = await response.json();
-        
+
         if (response.ok) {
           setEnvStatus('✅ .envファイルを更新しました');
-          await fetchEnvData(); // 最新の内容を再取得
+          await fetchEnvData();
         } else {
           setEnvStatus(`❌ エラー: ${result.message}`);
         }
@@ -906,23 +1170,22 @@ const MultiPageAgentChat = () => {
         setEnvStatus('❌ エラー: .env更新に失敗しました');
       }
       setIsLoadingEnv(false);
-    };
+    }, [envContent, fetchEnvData]);
 
-    const reloadEnv = async () => {
+    const reloadEnv = useCallback(async () => {
       setIsLoadingEnv(true);
       try {
         const response = await fetch(`${API_BASE_URL}/env/reload`, {
           method: 'POST'
         });
-        
+
         const result = await response.json();
-        
+
         if (response.ok) {
           setEnvStatus('✅ .env設定を再読み込みしました');
-          await fetchAgentConfig(); // エージェント設定を更新
-          await fetchEnvData(); // 最新の内容を再取得
-          
-          // サーバー状態をチェック
+          await fetchAgentConfig();
+          await fetchEnvData();
+
           setTimeout(async () => {
             try {
               await checkServerHealth();
@@ -939,96 +1202,71 @@ const MultiPageAgentChat = () => {
         setEnvStatus('❌ エラー: .env再読み込みに失敗しました');
       }
       setIsLoadingEnv(false);
-    };
+    }, [fetchAgentConfig, fetchEnvData, checkServerHealth]);
 
-    const generateEnvFromConfig = () => {
+    const handleTabChange = useCallback(async (newTab) => {
+      setActiveTab(newTab);
+      if (newTab === 'env' && !envData) {
+        await fetchEnvData();
+      }
+    }, [envData, fetchEnvData]);
+
+    const generateEnvContent = useCallback(() => {
       const envVars = [];
-      
-      // プロバイダー設定
+
       envVars.push(`AI_PROVIDER=${tempConfig.provider}`);
       envVars.push(`AI_MODEL=${tempConfig.model}`);
       envVars.push(`AI_TEMPERATURE=${tempConfig.temperature}`);
       envVars.push(`AI_STREAMING=${tempConfig.streaming}`);
-      
-      // API設定
+
       if (tempConfig.provider === 'openai' && tempConfig.openaiApiKey) {
         envVars.push(`OPENAI_API_KEY=${tempConfig.openaiApiKey}`);
       }
-      
+
       if (tempConfig.provider === 'azureopenai') {
         if (tempConfig.openaiApiKey) envVars.push(`OPENAI_API_KEY=${tempConfig.openaiApiKey}`);
         if (tempConfig.azureEndpoint) envVars.push(`AZURE_OPENAI_ENDPOINT=${tempConfig.azureEndpoint}`);
         if (tempConfig.azureApiVersion) envVars.push(`AZURE_OPENAI_API_VERSION=${tempConfig.azureApiVersion}`);
       }
-      
+
       if (tempConfig.provider === 'localllm') {
         envVars.push(`LOCAL_LLM_URL=${tempConfig.localLlmUrl}`);
         envVars.push(`LOCAL_LLM_MODEL=${tempConfig.localLlmModel}`);
       }
-      
-      // 共通設定
+
       envVars.push('PORT=3000');
       envVars.push('HOST=localhost');
-      
+
       return envVars.join('\n');
-    };
+    }, [tempConfig]);
 
-    // タブが変更されたときに.envデータを取得
-    const handleTabChange = async (newTab) => {
-      setActiveTab(newTab);
-      if (newTab === 'env' && !envData) {
-        await fetchEnvData();
-      }
-    };
-
-    const handleSave = async () => {
+    const saveConfigToEnv = useCallback(async () => {
       try {
-        if (activeTab === 'env') {
-          // .envタブの場合は直接.envファイルを更新
-          await updateEnvFile();
-        } else {
-          // 一般設定・エンドポイント設定の場合は.envファイルに自動保存
-          await saveConfigToEnv();
-        }
-      } catch (error) {
-        console.error('設定保存エラー:', error);
-        setEnvStatus('❌ エラー: 設定の保存に失敗しました');
-      }
-    };
-
-    // 設定を.envファイルに自動保存し、再読み込みする
-    const saveConfigToEnv = async () => {
-      try {
-        // 現在の.env内容を生成
         const envVars = {};
-        
-        // プロバイダー設定
+
         envVars.AI_PROVIDER = tempConfig.provider;
         envVars.AI_MODEL = tempConfig.model;
         envVars.AI_TEMPERATURE = tempConfig.temperature.toString();
         envVars.AI_STREAMING = tempConfig.streaming.toString();
-        
-        // API設定
+
         if (tempConfig.provider === 'openai' && tempConfig.openaiApiKey) {
           envVars.OPENAI_API_KEY = tempConfig.openaiApiKey;
         }
-        
+
         if (tempConfig.provider === 'azureopenai') {
           if (tempConfig.openaiApiKey) envVars.OPENAI_API_KEY = tempConfig.openaiApiKey;
           if (tempConfig.azureEndpoint) envVars.AZURE_OPENAI_ENDPOINT = tempConfig.azureEndpoint;
           if (tempConfig.azureApiVersion) envVars.AZURE_OPENAI_API_VERSION = tempConfig.azureApiVersion;
         }
-        
+
         if (tempConfig.provider === 'localllm') {
           envVars.LOCAL_LLM_URL = tempConfig.localLlmUrl;
           envVars.LOCAL_LLM_MODEL = tempConfig.localLlmModel;
         }
-        
-        // 共通設定
+
         envVars.PORT = '3000';
         envVars.HOST = 'localhost';
-        
-        // .envファイルに保存
+
         const response = await fetch(`${API_BASE_URL}/env`, {
           method: 'POST',
           headers: {
@@ -1038,28 +1276,25 @@ const MultiPageAgentChat = () => {
             variables: envVars
           })
         });
-        
+
         if (!response.ok) {
           const errorData = await response.json();
           throw new Error(errorData.message || '設定の保存に失敗しました');
         }
-        
+
         setEnvStatus('✅ 設定を保存しています...');
-        
-        // 設定を自動再読み込み
+
         const reloadResponse = await fetch(`${API_BASE_URL}/env/reload`, {
           method: 'POST'
         });
-        
+
         if (!reloadResponse.ok) {
           const errorData = await reloadResponse.json();
           throw new Error(errorData.message || '設定の再読み込みに失敗しました');
         }
-        
-        // エージェント設定を更新
+
         await fetchAgentConfig();
-        
-        // サーバー状態をチェック
+
         setTimeout(async () => {
           try {
             await checkServerHealth();
@@ -1070,55 +1305,36 @@ const MultiPageAgentChat = () => {
             setEnvStatus('⚠️ 設定は保存されましたが、サーバーとの接続に問題があります');
           }
         }, 1000);
-        
+
       } catch (error) {
         console.error('設定保存エラー:', error);
         setEnvStatus(`❌ エラー: ${error.message}`);
         throw error;
       }
-    };
+    }, [tempConfig, fetchAgentConfig, checkServerHealth]);
 
-    const generateEnvContent = () => {
-      const envVars = [];
-      
-      // プロバイダー設定
-      envVars.push(`AI_PROVIDER=${tempConfig.provider}`);
-      envVars.push(`AI_MODEL=${tempConfig.model}`);
-      envVars.push(`AI_TEMPERATURE=${tempConfig.temperature}`);
-      envVars.push(`AI_STREAMING=${tempConfig.streaming}`);
-      
-      // API設定
-      if (tempConfig.provider === 'openai' && tempConfig.openaiApiKey) {
-        envVars.push(`OPENAI_API_KEY=${tempConfig.openaiApiKey}`);
+    const handleSave = useCallback(async () => {
+      try {
+        if (activeTab === 'env') {
+          await updateEnvFile();
+        } else {
+          await saveConfigToEnv();
+        }
+      } catch (error) {
+        console.error('設定保存エラー:', error);
+        setEnvStatus('❌ エラー: 設定の保存に失敗しました');
       }
-      
-      if (tempConfig.provider === 'azureopenai') {
-        if (tempConfig.openaiApiKey) envVars.push(`OPENAI_API_KEY=${tempConfig.openaiApiKey}`);
-        if (tempConfig.azureEndpoint) envVars.push(`AZURE_OPENAI_ENDPOINT=${tempConfig.azureEndpoint}`);
-        if (tempConfig.azureApiVersion) envVars.push(`AZURE_OPENAI_API_VERSION=${tempConfig.azureApiVersion}`);
-      }
-      
-      if (tempConfig.provider === 'localllm') {
-        envVars.push(`LOCAL_LLM_URL=${tempConfig.localLlmUrl}`);
-        envVars.push(`LOCAL_LLM_MODEL=${tempConfig.localLlmModel}`);
-      }
-      
-      // 共通設定
-      envVars.push('PORT=3000');
-      envVars.push('HOST=localhost');
-      
-      return envVars.join('\n');
-    };
+    }, [activeTab, updateEnvFile, saveConfigToEnv]);
 
-    const copyEnvToClipboard = () => {
+    const copyEnvToClipboard = useCallback(() => {
       navigator.clipboard.writeText(generateEnvContent());
       setEnvStatus('✅ .env設定をクリップボードにコピーしました');
-    };
+    }, [generateEnvContent]);
 
-    const applyGeneratedEnv = () => {
+    const applyGeneratedEnv = useCallback(() => {
       setEnvContent(generateEnvContent());
       setEnvStatus('📝 生成された設定をエディタに適用しました');
-    };
+    }, [generateEnvContent]);
 
     if (!showSettings) return null;
 
@@ -1142,33 +1358,30 @@ const MultiPageAgentChat = () => {
           <div className="flex mb-6 bg-gray-100 rounded-lg p-1">
             <button
               onClick={() => handleTabChange('general')}
-              className={`flex-1 py-2 px-4 rounded-md transition-colors font-medium ${
-                activeTab === 'general' 
-                  ? 'bg-white text-blue-600 shadow-sm' 
-                  : 'text-gray-600 hover:text-gray-800'
-              }`}
+              className={`flex-1 py-2 px-4 rounded-md transition-colors font-medium ${activeTab === 'general'
+                ? 'bg-white text-blue-600 shadow-sm'
+                : 'text-gray-600 hover:text-gray-800'
+                }`}
             >
               <Settings className="w-4 h-4 inline mr-2" />
               一般設定
             </button>
             <button
               onClick={() => handleTabChange('endpoints')}
-              className={`flex-1 py-2 px-4 rounded-md transition-colors font-medium ${
-                activeTab === 'endpoints' 
-                  ? 'bg-white text-blue-600 shadow-sm' 
-                  : 'text-gray-600 hover:text-gray-800'
-              }`}
+              className={`flex-1 py-2 px-4 rounded-md transition-colors font-medium ${activeTab === 'endpoints'
+                ? 'bg-white text-blue-600 shadow-sm'
+                : 'text-gray-600 hover:text-gray-800'
+                }`}
             >
               <Server className="w-4 h-4 inline mr-2" />
               エンドポイント
             </button>
             <button
               onClick={() => handleTabChange('env')}
-              className={`flex-1 py-2 px-4 rounded-md transition-colors font-medium ${
-                activeTab === 'env' 
-                  ? 'bg-white text-blue-600 shadow-sm' 
-                  : 'text-gray-600 hover:text-gray-800'
-              }`}
+              className={`flex-1 py-2 px-4 rounded-md transition-colors font-medium ${activeTab === 'env'
+                ? 'bg-white text-blue-600 shadow-sm'
+                : 'text-gray-600 hover:text-gray-800'
+                }`}
             >
               <Edit3 className="w-4 h-4 inline mr-2" />
               .env管理
@@ -1177,12 +1390,11 @@ const MultiPageAgentChat = () => {
 
           {/* ステータス表示 */}
           {envStatus && (
-            <div className={`mb-4 p-3 rounded-lg text-sm ${
-              envStatus.startsWith('✅') ? 'bg-green-50 text-green-700' :
+            <div className={`mb-4 p-3 rounded-lg text-sm ${envStatus.startsWith('✅') ? 'bg-green-50 text-green-700' :
               envStatus.startsWith('❌') ? 'bg-red-50 text-red-700' :
-              envStatus.startsWith('⚠️') ? 'bg-yellow-50 text-yellow-700' :
-              'bg-blue-50 text-blue-700'
-            }`}>
+                envStatus.startsWith('⚠️') ? 'bg-yellow-50 text-yellow-700' :
+                  'bg-blue-50 text-blue-700'
+              }`}>
               {envStatus}
             </div>
           )}
@@ -1205,7 +1417,7 @@ const MultiPageAgentChat = () => {
                 <p className="text-xs text-gray-500 mt-1">
                   {tempConfig.provider === 'openai' && 'OpenAI APIを使用'}
                   {tempConfig.provider === 'azureopenai' && 'Azure OpenAI サービスを使用'}
-                  {tempConfig.provider === 'localllm' && 'ローカルLLM（VLLM）を使用'}
+                  {tempConfig.provider === 'localllm' && 'ローカルLLM（VLLM）を使用 - LangChain Agent有効'}
                 </p>
               </div>
 
@@ -1270,6 +1482,20 @@ const MultiPageAgentChat = () => {
                   className="w-5 h-5 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
                 />
               </div>
+
+              {tempConfig.provider === 'localllm' && (
+                <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+                  <div className="flex items-start">
+                    <Brain className="w-5 h-5 text-purple-600 mr-2 mt-0.5 flex-shrink-0" />
+                    <div className="text-sm text-purple-800">
+                      <p className="font-semibold mb-1">LangChain Agent モード:</p>
+                      <p className="text-xs">
+                        ローカルLLM使用時は高度な推論機能（ReAct Agent）が有効になり、思考プロセスがリアルタイムで表示されます。
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -1394,7 +1620,6 @@ const MultiPageAgentChat = () => {
                 </>
               )}
 
-              {/* 接続テスト機能 */}
               <div className="mt-6 p-4 bg-gray-50 rounded-lg">
                 <h4 className="text-sm font-semibold text-gray-700 mb-2 flex items-center">
                   <CheckCircle className="w-4 h-4 mr-2" />
@@ -1410,6 +1635,14 @@ const MultiPageAgentChat = () => {
                       {agentConfig?.config?.provider || '未設定'}
                     </span>
                   </div>
+                  {agentConfig?.langChainEnabled && (
+                    <div className="flex items-center justify-between mt-1">
+                      <span>LangChain Agent:</span>
+                      <span className="px-2 py-1 bg-purple-100 text-purple-700 rounded">
+                        有効
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -1417,7 +1650,6 @@ const MultiPageAgentChat = () => {
 
           {activeTab === 'env' && (
             <div className="space-y-6">
-              {/* 高度なユーザー向けの警告 */}
               <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
                 <div className="flex items-start">
                   <AlertCircle className="w-5 h-5 text-yellow-600 mr-2 mt-0.5 flex-shrink-0" />
@@ -1431,7 +1663,6 @@ const MultiPageAgentChat = () => {
                 </div>
               </div>
 
-              {/* 現在の状態 */}
               <div className="bg-gray-50 rounded-lg p-4">
                 <div className="flex items-center justify-between mb-3">
                   <h4 className="text-sm font-semibold text-gray-700 flex items-center">
@@ -1446,7 +1677,7 @@ const MultiPageAgentChat = () => {
                     {isLoadingEnv ? <Loader className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
                   </button>
                 </div>
-                
+
                 {envData && (
                   <div className="grid grid-cols-2 gap-4 text-xs">
                     <div>
@@ -1471,7 +1702,6 @@ const MultiPageAgentChat = () => {
                 )}
               </div>
 
-              {/* .envエディタ */}
               <div>
                 <div className="flex items-center justify-between mb-3">
                   <label className="block text-sm font-semibold text-gray-700">
@@ -1505,7 +1735,6 @@ const MultiPageAgentChat = () => {
                 </p>
               </div>
 
-              {/* アクションボタン */}
               <div className="flex space-x-3">
                 <button
                   onClick={updateEnvFile}
@@ -1533,7 +1762,6 @@ const MultiPageAgentChat = () => {
                 </button>
               </div>
 
-              {/* 注意事項 */}
               <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
                 <div className="flex items-start">
                   <AlertCircle className="w-5 h-5 text-yellow-600 mr-2 mt-0.5 flex-shrink-0" />
@@ -1582,9 +1810,7 @@ const MultiPageAgentChat = () => {
         </div>
       </div>
     );
-  };
-
-  const currentPage = getCurrentPage();
+  });
 
   // ローディング状態
   if (!isInitialized) {
@@ -1601,16 +1827,11 @@ const MultiPageAgentChat = () => {
 
   return (
     <div className="flex h-screen bg-gray-50 w-full">
-      {/* アイコンバー */}
       <IconBar />
-      
-      {/* メインコンテンツ */}
+
       {currentPage ? (
         <>
-          {/* ツールパレット */}
           <ToolPalette page={currentPage} />
-          
-          {/* チャットエリア */}
           <ChatArea page={currentPage} />
         </>
       ) : (
@@ -1631,7 +1852,6 @@ const MultiPageAgentChat = () => {
         </div>
       )}
 
-      {/* 設定モーダル */}
       <SettingsModal />
     </div>
   );
