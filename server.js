@@ -765,7 +765,7 @@ Thought: {agent_scratchpad}
           try {
             const stream = await agentExecutor.streamEvents(
               { input: query },
-              { 
+              {
                 version: "v1",
                 includeNames: ["ReactAgent", "ChatOpenAI"],
                 includeTags: ["tool"]
@@ -790,14 +790,14 @@ Thought: {agent_scratchpad}
                     yield { type: 'text', content: `💭 **思考${stepNumber}**: ` };
                     currentThought = '';
                   }
-                  
+
                   // Action:が含まれている場合、Thoughtの終了
                   if (content.includes('Action:') && isProcessingThought) {
                     isProcessingThought = false;
                     if (currentThought.trim()) {
                       yield { type: 'text', content: `\n\n` };
                     }
-                    
+
                     // Actionの開始
                     yield { type: 'text', content: `⚡ **アクション${stepNumber}**: ` };
                     const actionMatch = content.match(/Action:\s*(\w+)/);
@@ -805,7 +805,7 @@ Thought: {agent_scratchpad}
                       yield { type: 'text', content: `${actionMatch[1]} ツールを実行\n` };
                     }
                   }
-                  
+
                   // Final Answer:が含まれている場合
                   if (content.includes('Final Answer:')) {
                     yield { type: 'text', content: `\n📋 **最終回答**:\n` };
@@ -814,7 +814,7 @@ Thought: {agent_scratchpad}
                       yield { type: 'text', content: finalAnswer };
                     }
                   }
-                  
+
                   // 通常のthought内容をストリーミング
                   if (isProcessingThought && !content.includes('Thought:') && !content.includes('Action:')) {
                     currentThought += content;
@@ -827,7 +827,7 @@ Thought: {agent_scratchpad}
               if (event.event === 'on_tool_start') {
                 const toolName = event.name;
                 const toolInput = event.data?.input;
-                
+
                 yield { type: 'tool_call_start', tool_name: toolName, tool_args: JSON.stringify(toolInput) };
                 yield { type: 'text', content: `🔧 **${toolName}** 実行中...\n` };
               }
@@ -836,7 +836,7 @@ Thought: {agent_scratchpad}
               if (event.event === 'on_tool_end') {
                 const toolName = event.name;
                 const toolOutput = event.data?.output;
-                
+
                 yield { type: 'tool_call_result', tool_name: toolName, result: toolOutput };
                 yield { type: 'text', content: `✅ **観察${stepNumber}**: ${toolOutput}\n\n` };
                 stepNumber++;
@@ -846,14 +846,14 @@ Thought: {agent_scratchpad}
               if (event.event === 'on_tool_error') {
                 const toolName = event.name;
                 const error = event.data?.error;
-                
+
                 yield { type: 'tool_call_error', tool_name: toolName, error: error };
                 yield { type: 'text', content: `❌ **ツールエラー**: ${error}\n\n` };
               }
             }
 
             console.log(`✅ Agent実行完了`);
-            
+
             // 最終結果がまだ表示されていない場合の処理
             if (!finalAnswer) {
               yield { type: 'text', content: `\n🎯 **処理完了**: 計算が完了しました。\n` };
@@ -861,15 +861,15 @@ Thought: {agent_scratchpad}
 
           } catch (streamError) {
             console.error('⚠️ AgentExecutor ストリーミングエラー:', streamError);
-            
+
             // フォールバック: 従来の方法で実行
             yield { type: 'text', content: `⚠️ ストリーミング処理でエラーが発生、代替処理で実行中...\n\n` };
-            
+
             const result = await agentExecutor.invoke({ input: query });
             const content = result.output || '結果を取得できませんでした';
-            
+
             yield { type: 'text', content: `📋 **最終結果**:\n` };
-            
+
             const chunkSize = 8;
             for (let i = 0; i < content.length; i += chunkSize) {
               const chunk = content.slice(i, i + chunkSize);
@@ -1809,8 +1809,14 @@ async function main() {
         finalContent = lines.join('\n');
       }
 
-      // バックアップを作成
-      const backupPath = path.join(__dirname, `.env.backup.${Date.now()}`);
+      // バックアップ用ディレクトリを用意 (プロジェクト直下/env-backup)
+      const backupDir = path.join(__dirname, 'env-backup');
+      if (!existsSync(backupDir)) {
+        await fs.mkdir(backupDir, { recursive: true });
+      }
+      // バックアップファイル名は .env.YYYYMMDDHHMMSS.backup の形式
+      const timestamp = new Date().toISOString().replace(/[-:T\.Z]/g, '').slice(0, 14);
+      const backupPath = path.join(backupDir, `.env.${timestamp}.backup`);
       if (existsSync(envPath)) {
         copyFileSync(envPath, backupPath);
       }
