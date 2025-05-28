@@ -5,7 +5,7 @@ import { IsolatedProviders } from './IsolatedContexts';
 import IconBar from './IconBar';
 import ToolPalette from './ToolPalette';
 import ChatArea from './ChatArea';
-import SettingsModal from './SettingsModal';
+import SettingsModal from './SettingsModal.jsx';
 
 const AppContent = () => {
   const appContext = useApp();

@@ -2,7 +2,7 @@ import React, { memo, useCallback, useRef, useEffect } from 'react';
 import { 
   User, Bot, Wrench, Brain, Zap, Eye, Target, Cpu, Cog 
 } from 'lucide-react';
-import { useApp } from './AppContext';
+import { useMessageListIsolated } from './IsolatedContexts';
 
 const MessageItem = memo(({ message, agentConfig }) => {
   const isUser = message.role === 'user';
@@ -249,11 +249,11 @@ const MessageItem = memo(({ message, agentConfig }) => {
 MessageItem.displayName = 'MessageItem';
 
 const MessageList = memo(() => {
-  const { currentPage, agentConfig, getAnimalEmoji } = useApp();
+  const { currentPage, agentConfig, getAnimalEmoji } = useMessageListIsolated(); // 新しい分離されたフック
   const messagesEndRef = useRef(null);
 
   // デバッグ用ログ（本番では削除）
-  console.log('MessageList rendering', { 
+  console.log('MessageList rendering (MESSAGE-ONLY)', { 
     pageId: currentPage?.id, 
     messageCount: currentPage?.messages?.length,
     lastMessageId: currentPage?.messages?.[currentPage.messages.length - 1]?.id
@@ -263,39 +263,19 @@ const MessageList = memo(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [currentPage?.messages?.length]); // メッセージ数のみに依存
 
-  if (!currentPage) return null;
+  if (!currentPage || currentPage.messages.length === 0) return null;
 
   return (
     <div className="flex-1 overflow-y-auto p-6">
-      {currentPage.messages.length === 0 ? (
-        <div className="text-center text-gray-500 mt-16">
-          <div className="w-24 h-24 mx-auto mb-6 bg-gradient-to-r from-blue-100 to-purple-100 rounded-full flex items-center justify-center">
-            <Bot size={40} className="text-blue-500" />
-          </div>
-          <h2 className="text-2xl font-bold mb-2">{currentPage.name}との会話</h2>
-          <p className="text-gray-400 mb-4">何でもお気軽にお聞かせください</p>
-          <div className="inline-flex items-center space-x-2 bg-blue-50 px-4 py-2 rounded-full text-sm text-blue-600">
-            <Zap size={16} />
-            <span>{currentPage?.selectedTools?.size || 0}個のツールが利用可能</span>
-          </div>
-          {agentConfig?.langChainEnabled && (
-            <div className="inline-flex items-center space-x-2 bg-purple-50 px-4 py-2 rounded-full text-sm text-purple-600 ml-2">
-              <Brain className="w-4 h-4" />
-              <span>高度な推論モード有効</span>
-            </div>
-          )}
-        </div>
-      ) : (
-        <div className="space-y-4 max-w-full">
-          {currentPage.messages.map(message => (
-            <MessageItem 
-              key={message.id} 
-              message={message} 
-              agentConfig={agentConfig}
-            />
-          ))}
-        </div>
-      )}
+      <div className="space-y-4 max-w-full">
+        {currentPage.messages.map(message => (
+          <MessageItem 
+            key={message.id} 
+            message={message} 
+            agentConfig={agentConfig}
+          />
+        ))}
+      </div>
       <div ref={messagesEndRef} />
     </div>
   );

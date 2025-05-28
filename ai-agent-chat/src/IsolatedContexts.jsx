@@ -1,268 +1,495 @@
-import React, { createContext, useContext, useMemo, useRef } from 'react';
+import React, { createContext, useContext, useMemo, useRef, useState } from 'react';
 import { useApp } from './AppContext';
 
-// 静的データ用のContext（ストリーミング更新の影響を受けない）
-const StaticDataContext = createContext();
+// 基本データ用のContext（ページの基本情報のみ）
+const BasicDataContext = createContext();
+
+// ツール選択状態専用のContext
+const ToolSelectionContext = createContext();
 
 // メッセージデータ用のContext（ストリーミング更新のみ）
 const MessageDataContext = createContext();
 
-// 静的データProvider
-export const StaticDataProvider = ({ children }) => {
-  const mainContext = useApp();
-  const staticDataRef = useRef(null);
+// 設定モーダル専用のContext
+const SettingsModalContext = createContext();
 
-  const staticValue = useMemo(() => {
-    // ページの基本情報とselectedToolsの変更を監視
-    const currentPage = mainContext.pages?.find(p => p.id === mainContext.currentPageId);
-    const currentSelectedToolsArray = currentPage?.selectedTools ? [...currentPage.selectedTools].sort() : [];
-    const currentSelectedToolsKey = currentSelectedToolsArray.join(',');
-    
-    // 初回または重要な変更があった場合のみ更新
-    const shouldUpdate = !staticDataRef.current ||
-      staticDataRef.current.tools !== mainContext.tools ||
-      staticDataRef.current.serverStatus !== mainContext.serverStatus ||
-      staticDataRef.current.agentConfig !== mainContext.agentConfig ||
-      staticDataRef.current.pages?.length !== mainContext.pages?.length ||
-      staticDataRef.current.currentPageId !== mainContext.currentPageId ||
-      staticDataRef.current.showSettings !== mainContext.showSettings ||
-      staticDataRef.current.editingPageName !== mainContext.editingPageName ||
-      staticDataRef.current.isInitialized !== mainContext.isInitialized ||
-      staticDataRef.current.currentSelectedToolsKey !== currentSelectedToolsKey;
+// 設定モーダル専用Provider
+export const SettingsModalProvider = ({ children }) => {
+    const [showSettings, setShowSettings] = useState(false);
 
-    if (shouldUpdate) {
-      console.log('StaticDataProvider updating:', {
-        reason: !staticDataRef.current ? 'initial' : 'change detected',
-        currentSelectedToolsKey,
-        previousSelectedToolsKey: staticDataRef.current?.currentSelectedToolsKey,
-        currentPageId: mainContext.currentPageId
-      });
+    const settingsValue = useMemo(() => ({
+        showSettings,
+        setShowSettings
+    }), [showSettings]);
 
-      staticDataRef.current = {
-        // ページの基本情報（メッセージは除外、selectedToolsは含む）
-        pages: (mainContext.pages || []).map(page => ({
-          id: page.id,
-          name: page.name,
-          selectedTools: page.selectedTools,
-          isLoading: page.isLoading,
-          settings: page.settings
-        })),
-        currentPageId: mainContext.currentPageId,
-        currentSelectedToolsKey: currentSelectedToolsKey,
-        tools: mainContext.tools,
-        toolIcons: mainContext.toolIcons,
-        serverStatus: mainContext.serverStatus,
-        agentConfig: mainContext.agentConfig,
-        showSettings: mainContext.showSettings,
-        editingPageName: mainContext.editingPageName,
-        isInitialized: mainContext.isInitialized,
+    return (
+        <SettingsModalContext.Provider value={settingsValue}>
+            {children}
+        </SettingsModalContext.Provider>
+    );
+};
+
+// 基本データProvider（showSettingsを除外）
+export const BasicDataProvider = ({ children }) => {
+    const mainContext = useApp();
+    const basicDataRef = useRef(null);
+
+    const basicValue = useMemo(() => {
+        // showSettingsを依存関係から完全に除外
+        const shouldUpdate = !basicDataRef.current ||
+            basicDataRef.current.tools !== mainContext.tools ||
+            basicDataRef.current.serverStatus !== mainContext.serverStatus ||
+            basicDataRef.current.agentConfig !== mainContext.agentConfig ||
+            basicDataRef.current.pages?.length !== mainContext.pages?.length ||
+            basicDataRef.current.currentPageId !== mainContext.currentPageId ||
+            basicDataRef.current.editingPageName !== mainContext.editingPageName ||
+            basicDataRef.current.isInitialized !== mainContext.isInitialized;
+
+        if (shouldUpdate) {
+            console.log('BasicDataProvider updating:', {
+                reason: !basicDataRef.current ? 'initial' : 'basic change detected',
+                currentPageId: mainContext.currentPageId,
+                toolsLength: mainContext.tools?.length
+            });
+
+            basicDataRef.current = {
+                // ページの基本情報（selectedToolsとmessagesは除外）
+                pages: (mainContext.pages || []).map(page => ({
+                    id: page.id,
+                    name: page.name,
+                    isLoading: page.isLoading,
+                    settings: page.settings
+                })),
+                currentPageId: mainContext.currentPageId,
+                tools: mainContext.tools,
+                toolIcons: mainContext.toolIcons,
+                serverStatus: mainContext.serverStatus,
+                agentConfig: mainContext.agentConfig,
+                editingPageName: mainContext.editingPageName,
+                isInitialized: mainContext.isInitialized,
+
+                // Actions
+                dispatch: mainContext.dispatch,
+                createNewPage: mainContext.createNewPage,
+                deletePage: mainContext.deletePage,
+                updatePageName: mainContext.updatePageName,
+                updatePageLoading: mainContext.updatePageLoading,
+
+                // 設定関連のAPI（追加）
+                fetchAgentConfig: mainContext.fetchAgentConfig,
+                checkServerHealth: mainContext.checkServerHealth,
+
+                // Utilities
+                generateRandomAnimalName: mainContext.generateRandomAnimalName,
+                getAnimalEmoji: mainContext.getAnimalEmoji,
+                API_BASE_URL: mainContext.API_BASE_URL
+            };
+        }
+
+        return basicDataRef.current;
+    }, [
+        mainContext.tools,
+        mainContext.serverStatus,
+        mainContext.agentConfig,
+        mainContext.pages?.length,
+        mainContext.currentPageId,
+        mainContext.editingPageName,
+        mainContext.isInitialized,
+        // 関数の安定性を確保
+        mainContext.fetchAgentConfig,
+        mainContext.checkServerHealth
+    ]);
+
+    return (
+        <BasicDataContext.Provider value={basicValue}>
+            {children}
+        </BasicDataContext.Provider>
+    );
+};
+
+// ツール選択状態専用Provider（最適化版）
+export const ToolSelectionProvider = ({ children }) => {
+    const mainContext = useApp();
+    const toolSelectionRef = useRef(null);
+
+    const toolSelectionValue = useMemo(() => {
+        const currentPage = mainContext.pages?.find(p => p.id === mainContext.currentPageId);
+        const selectedTools = currentPage?.selectedTools || new Set();
         
-        // Actions
-        dispatch: mainContext.dispatch,
-        createNewPage: mainContext.createNewPage,
-        deletePage: mainContext.deletePage,
-        updatePageName: mainContext.updatePageName,
-        toggleToolInPage: mainContext.toggleToolInPage,
-        updatePageLoading: mainContext.updatePageLoading,
+        // Set の内容を配列にして文字列化（安定した比較のため）
+        const toolsArray = [...selectedTools].sort();
+        const toolsString = toolsArray.join(',');
         
-        // Utilities
-        generateRandomAnimalName: mainContext.generateRandomAnimalName,
-        getAnimalEmoji: mainContext.getAnimalEmoji,
-        API_BASE_URL: mainContext.API_BASE_URL
-      };
-    }
+        // 前回と同じ内容の場合は、同じ参照を返す
+        if (toolSelectionRef.current?.toolsString === toolsString && 
+            toolSelectionRef.current?.currentPageId === mainContext.currentPageId) {
+            return toolSelectionRef.current.value;
+        }
 
-    return staticDataRef.current;
-  }, [
-    mainContext.tools,
-    mainContext.serverStatus,
-    mainContext.agentConfig,
-    mainContext.pages?.length,
-    mainContext.currentPageId,
-    mainContext.showSettings,
-    mainContext.editingPageName,
-    mainContext.isInitialized,
-    // selectedToolsの内容変更を検知するために、配列化してキー化
-    mainContext.pages?.find(p => p.id === mainContext.currentPageId)?.selectedTools ? 
-      [...mainContext.pages.find(p => p.id === mainContext.currentPageId).selectedTools].sort().join(',') : 
-      ''
-  ]);
+        const newValue = {
+            currentPageId: mainContext.currentPageId,
+            selectedTools: selectedTools,
+            selectedToolsSize: selectedTools.size,
+            toolsArray: toolsArray, // デバッグ用
+            toggleToolInPage: mainContext.toggleToolInPage,
+            dispatch: mainContext.dispatch
+        };
 
-  return (
-    <StaticDataContext.Provider value={staticValue}>
-      {children}
-    </StaticDataContext.Provider>
-  );
+        // 参照をキャッシュ
+        toolSelectionRef.current = {
+            currentPageId: mainContext.currentPageId,
+            toolsString: toolsString,
+            value: newValue
+        };
+
+        console.log('ToolSelectionProvider updating:', {
+            pageId: mainContext.currentPageId,
+            toolsString,
+            size: selectedTools.size
+        });
+
+        return newValue;
+    }, [
+        mainContext.currentPageId,
+        // Set の内容変更を効率的に検知
+        mainContext.pages?.find(p => p.id === mainContext.currentPageId)?.selectedTools ?
+            [...mainContext.pages.find(p => p.id === mainContext.currentPageId).selectedTools].sort().join(',') :
+            '',
+        mainContext.toggleToolInPage,
+        mainContext.dispatch
+    ]);
+
+    return (
+        <ToolSelectionContext.Provider value={toolSelectionValue}>
+            {children}
+        </ToolSelectionContext.Provider>
+    );
 };
 
 // メッセージデータProvider
 export const MessageDataProvider = ({ children }) => {
-  const mainContext = useApp();
+    const mainContext = useApp();
+    const messageDataRef = useRef(null);
 
-  const messageValue = useMemo(() => ({
-    currentPage: mainContext.currentPage,
-    addMessage: mainContext.addMessage,
-    updateMessage: mainContext.updateMessage,
-    checkServerHealth: mainContext.checkServerHealth,
-    fetchTools: mainContext.fetchTools,
-    fetchAgentConfig: mainContext.fetchAgentConfig
-  }), [
-    mainContext.currentPage,
-    mainContext.addMessage,
-    mainContext.updateMessage,
-    mainContext.checkServerHealth,
-    mainContext.fetchTools,
-    mainContext.fetchAgentConfig
-  ]);
+    const messageValue = useMemo(() => {
+        const currentPage = (mainContext.pages || []).find(p => p.id === mainContext.currentPageId);
 
-  return (
-    <MessageDataContext.Provider value={messageValue}>
-      {children}
-    </MessageDataContext.Provider>
-  );
+        // currentPageの参照安定性を向上させる
+        const shouldUpdateCurrentPage = !messageDataRef.current?.currentPage ||
+            messageDataRef.current.currentPage.id !== currentPage?.id ||
+            messageDataRef.current.currentPage.name !== currentPage?.name ||
+            messageDataRef.current.currentPage.messages?.length !== currentPage?.messages?.length ||
+            messageDataRef.current.currentPage.isLoading !== currentPage?.isLoading ||
+            // settingsオブジェクトの内容変更をチェック
+            JSON.stringify(messageDataRef.current.currentPage.settings) !== JSON.stringify(currentPage?.settings);
+
+        if (shouldUpdateCurrentPage || !messageDataRef.current) {
+            console.log('MessageDataProvider updating currentPage:', {
+                reason: !messageDataRef.current ? 'initial' : 'page content changed',
+                pageId: currentPage?.id,
+                messageCount: currentPage?.messages?.length
+            });
+
+            const optimizedCurrentPage = currentPage ? {
+                id: currentPage.id,
+                name: currentPage.name,
+                messages: currentPage.messages,
+                isLoading: currentPage.isLoading,
+                settings: currentPage.settings,
+                selectedTools: currentPage.selectedTools // 安定した参照として保持
+            } : null;
+
+            messageDataRef.current = {
+                currentPage: optimizedCurrentPage,
+                addMessage: mainContext.addMessage,
+                updateMessage: mainContext.updateMessage,
+                checkServerHealth: mainContext.checkServerHealth,
+                fetchTools: mainContext.fetchTools,
+                fetchAgentConfig: mainContext.fetchAgentConfig
+            };
+        }
+
+        return messageDataRef.current;
+    }, [
+        // メッセージデータに関連する重要な変更のみを監視
+        mainContext.currentPageId,
+        mainContext.pages?.find(p => p.id === mainContext.currentPageId)?.id,
+        mainContext.pages?.find(p => p.id === mainContext.currentPageId)?.name,
+        mainContext.pages?.find(p => p.id === mainContext.currentPageId)?.messages?.length,
+        mainContext.pages?.find(p => p.id === mainContext.currentPageId)?.isLoading,
+        // selectedToolsの変更は依存関係から除外
+        mainContext.addMessage,
+        mainContext.updateMessage,
+        mainContext.checkServerHealth,
+        mainContext.fetchTools,
+        mainContext.fetchAgentConfig
+    ]);
+
+    return (
+        <MessageDataContext.Provider value={messageValue}>
+            {children}
+        </MessageDataContext.Provider>
+    );
 };
 
 // 結合Provider
 export const IsolatedProviders = ({ children }) => {
-  return (
-    <StaticDataProvider>
-      <MessageDataProvider>
-        {children}
-      </MessageDataProvider>
-    </StaticDataProvider>
-  );
+    return (
+        <SettingsModalProvider>
+            <BasicDataProvider>
+                <ToolSelectionProvider>
+                    <MessageDataProvider>
+                        {children}
+                    </MessageDataProvider>
+                </ToolSelectionProvider>
+            </BasicDataProvider>
+        </SettingsModalProvider>
+    );
 };
 
 // カスタムフック
-export const useStaticData = () => {
-  const context = useContext(StaticDataContext);
-  if (!context) {
-    throw new Error('useStaticData must be used within StaticDataProvider');
-  }
-  return context;
+export const useBasicData = () => {
+    const context = useContext(BasicDataContext);
+    if (!context) {
+        throw new Error('useBasicData must be used within BasicDataProvider');
+    }
+    return context;
+};
+
+export const useToolSelection = () => {
+    const context = useContext(ToolSelectionContext);
+    if (!context) {
+        throw new Error('useToolSelection must be used within ToolSelectionProvider');
+    }
+    return context;
 };
 
 export const useMessageData = () => {
-  const context = useContext(MessageDataContext);
-  if (!context) {
-    throw new Error('useMessageData must be used within MessageDataProvider');
-  }
-  return context;
+    const context = useContext(MessageDataContext);
+    if (!context) {
+        throw new Error('useMessageData must be used within MessageDataProvider');
+    }
+    return context;
 };
 
-// 各コンポーネント用の特化フック
+// 設定モーダル専用フック
+export const useSettingsModal = () => {
+    const context = useContext(SettingsModalContext);
+    if (!context) {
+        throw new Error('useSettingsModal must be used within SettingsModalProvider');
+    }
+    return context;
+};
+
+// 各コンポーネント用の特化フック（依存関係を最小化）
 export const useIconBarIsolated = () => {
-  const staticData = useStaticData();
-  
-  return useMemo(() => ({
-    pages: staticData.pages,
-    currentPageId: staticData.currentPageId,
-    createNewPage: staticData.createNewPage,
-    deletePage: staticData.deletePage,
-    getAnimalEmoji: staticData.getAnimalEmoji,
-    dispatch: staticData.dispatch
-  }), [
-    staticData.pages,
-    staticData.currentPageId,
-    staticData.createNewPage,
-    staticData.deletePage,
-    staticData.getAnimalEmoji,
-    staticData.dispatch
-  ]);
+    const basicData = useBasicData();
+
+    return useMemo(() => ({
+        pages: basicData.pages,
+        currentPageId: basicData.currentPageId,
+        createNewPage: basicData.createNewPage,
+        deletePage: basicData.deletePage,
+        getAnimalEmoji: basicData.getAnimalEmoji,
+        dispatch: basicData.dispatch
+        // setShowSettingsを除外してIconBarを安定化
+    }), [
+        basicData.pages,
+        basicData.currentPageId,
+        basicData.createNewPage,
+        basicData.deletePage,
+        basicData.getAnimalEmoji,
+        basicData.dispatch
+    ]);
 };
 
+// 設定ボタン専用フック
+export const useSettingsButtonIsolated = () => {
+    const settingsModal = useSettingsModal();
+
+    return useMemo(() => ({
+        setShowSettings: settingsModal.setShowSettings
+    }), [
+        settingsModal.setShowSettings
+    ]);
+};
+
+// ToolPalette専用フック（最適化版）
 export const useToolPaletteIsolated = () => {
-  const staticData = useStaticData();
-  
-  const currentPage = useMemo(() => {
-    return staticData.pages.find(p => p.id === staticData.currentPageId);
-  }, [staticData.pages, staticData.currentPageId]);
-  
-  // selectedToolsの内容をキー化して変更を検知
-  const selectedToolsKey = useMemo(() => {
-    return currentPage?.selectedTools ? [...currentPage.selectedTools].sort().join(',') : '';
-  }, [currentPage?.selectedTools]);
-  
-  // デバッグ用ログ
-  console.log('useToolPaletteIsolated update:', {
-    pageId: currentPage?.id,
-    selectedToolsSize: currentPage?.selectedTools?.size,
-    selectedToolsKey,
-    selectedTools: currentPage?.selectedTools ? [...currentPage.selectedTools] : [],
-    timestamp: Date.now()
-  });
-  
-  return useMemo(() => ({
-    currentPage,
-    tools: staticData.tools,
-    serverStatus: staticData.serverStatus,
-    toggleToolInPage: staticData.toggleToolInPage,
-    dispatch: staticData.dispatch
-  }), [
-    currentPage?.id,
-    selectedToolsKey, // selectedToolsの内容変更を監視
-    staticData.tools,
-    staticData.serverStatus,
-    staticData.toggleToolInPage,
-    staticData.dispatch
-  ]);
+    const basicData = useBasicData();
+    const toolSelection = useToolSelection();
+    const prevToolsRef = useRef('');
+
+    return useMemo(() => {
+        const toolsString = toolSelection.toolsArray?.join(',') || '';
+        
+        // ツール選択が変わった場合のみログ出力
+        if (prevToolsRef.current !== toolsString) {
+            console.log('useToolPaletteIsolated: tool selection changed:', {
+                pageId: toolSelection.currentPageId,
+                oldTools: prevToolsRef.current,
+                newTools: toolsString,
+                size: toolSelection.selectedToolsSize,
+                timestamp: Date.now()
+            });
+            prevToolsRef.current = toolsString;
+        }
+
+        return {
+            currentPageId: toolSelection.currentPageId,
+            selectedTools: toolSelection.selectedTools,
+            selectedToolsSize: toolSelection.selectedToolsSize,
+            tools: basicData.tools,
+            serverStatus: basicData.serverStatus,
+            toggleToolInPage: toolSelection.toggleToolInPage,
+            dispatch: toolSelection.dispatch
+        };
+    }, [
+        toolSelection.currentPageId,
+        toolSelection.selectedToolsSize,
+        toolSelection.toolsArray?.join(','), // 選択内容の変更を監視
+        basicData.tools?.length,
+        basicData.serverStatus,
+        toolSelection.toggleToolInPage,
+        toolSelection.dispatch
+    ]);
 };
 
 export const useMessageInputIsolated = () => {
-  const staticData = useStaticData();
-  
-  const currentPage = useMemo(() => {
-    return staticData.pages.find(p => p.id === staticData.currentPageId);
-  }, [staticData.pages, staticData.currentPageId]);
-  
-  return useMemo(() => ({
-    currentPage,
-    serverStatus: staticData.serverStatus
-  }), [currentPage, staticData.serverStatus]);
+    const basicData = useBasicData();
+
+    const currentPage = useMemo(() => {
+        return basicData.pages.find(p => p.id === basicData.currentPageId);
+    }, [basicData.pages, basicData.currentPageId]);
+
+    return useMemo(() => ({
+        currentPage,
+        serverStatus: basicData.serverStatus
+    }), [currentPage, basicData.serverStatus]);
 };
 
 export const useMessageListIsolated = () => {
-  const messageData = useMessageData();
-  const staticData = useStaticData();
-  
-  return useMemo(() => ({
-    currentPage: messageData.currentPage,
-    agentConfig: staticData.agentConfig,
-    getAnimalEmoji: staticData.getAnimalEmoji
-  }), [
-    messageData.currentPage,
-    staticData.agentConfig,
-    staticData.getAnimalEmoji
-  ]);
+    const messageData = useMessageData();
+    const basicData = useBasicData();
+
+    return useMemo(() => ({
+        currentPage: messageData.currentPage,
+        agentConfig: basicData.agentConfig,
+        getAnimalEmoji: basicData.getAnimalEmoji
+    }), [
+        messageData.currentPage,
+        basicData.agentConfig,
+        basicData.getAnimalEmoji
+    ]);
 };
 
+// ChatHeader専用フック（最適化版）
+export const useChatHeaderIsolated = () => {
+    const basicData = useBasicData();
+    const toolSelection = useToolSelection();
+    const prevSizeRef = useRef(0);
+
+    return useMemo(() => {
+        const currentSize = toolSelection.selectedToolsSize || 0;
+        
+        // サイズが変わった場合のみログ出力
+        if (prevSizeRef.current !== currentSize) {
+            console.log('useChatHeaderIsolated: tool size changed:', {
+                pageId: basicData.currentPageId,
+                oldSize: prevSizeRef.current,
+                newSize: currentSize,
+                timestamp: Date.now()
+            });
+            prevSizeRef.current = currentSize;
+        }
+
+        return {
+            currentPageId: basicData.currentPageId,
+            currentPageName: basicData.pages?.find(p => p.id === basicData.currentPageId)?.name,
+            editingPageName: basicData.editingPageName,
+            serverStatus: basicData.serverStatus,
+            agentConfig: basicData.agentConfig,
+            selectedToolsSize: currentSize,
+            updatePageName: basicData.updatePageName,
+            getAnimalEmoji: basicData.getAnimalEmoji,
+            dispatch: basicData.dispatch
+        };
+    }, [
+        basicData.currentPageId,
+        basicData.pages?.find(p => p.id === basicData.currentPageId)?.name,
+        basicData.editingPageName,
+        basicData.serverStatus,
+        basicData.agentConfig,
+        toolSelection.selectedToolsSize, // サイズのみを監視
+        basicData.updatePageName,
+        basicData.getAnimalEmoji,
+        basicData.dispatch
+    ]);
+};
+
+// ChatArea本体用フック（最適化版 - ツール選択を監視しない）
 export const useChatAreaIsolated = () => {
-  const messageData = useMessageData();
-  const staticData = useStaticData();
-  
-  return useMemo(() => ({
-    currentPage: messageData.currentPage,
-    serverStatus: staticData.serverStatus,
-    agentConfig: staticData.agentConfig,
-    editingPageName: staticData.editingPageName,
-    updatePageName: staticData.updatePageName,
-    updatePageLoading: staticData.updatePageLoading,
-    addMessage: messageData.addMessage,
-    updateMessage: messageData.updateMessage,
-    getAnimalEmoji: staticData.getAnimalEmoji,
-    API_BASE_URL: staticData.API_BASE_URL,
-    dispatch: staticData.dispatch
-  }), [
-    messageData.currentPage,
-    staticData.serverStatus,
-    staticData.agentConfig,
-    staticData.editingPageName,
-    staticData.updatePageName,
-    staticData.updatePageLoading,
-    messageData.addMessage,
-    messageData.updateMessage,
-    staticData.getAnimalEmoji,
-    staticData.API_BASE_URL,
-    staticData.dispatch
-  ]);
+    const messageData = useMessageData();
+    const basicData = useBasicData();
+    // toolSelection を削除 - ChatAreaはツール選択の変更を監視しない
+
+    return useMemo(() => {
+        const currentPage = messageData.currentPage;
+        const hasMessages = currentPage?.messages?.length > 0;
+
+        console.log('useChatAreaIsolated called (TOOL-INDEPENDENT):', {
+            pageId: currentPage?.id,
+            hasMessages,
+            messageCount: currentPage?.messages?.length,
+            timestamp: Date.now()
+        });
+
+        return {
+            currentPage: messageData.currentPage,
+            serverStatus: basicData.serverStatus,
+            agentConfig: basicData.agentConfig,
+            updatePageLoading: basicData.updatePageLoading,
+            addMessage: messageData.addMessage,
+            updateMessage: messageData.updateMessage,
+            API_BASE_URL: basicData.API_BASE_URL,
+            hasMessages
+            // selectedToolsSize を削除 - ChatAreaは表示しない
+        };
+    }, [
+        messageData.currentPage?.id,
+        messageData.currentPage?.messages?.length,
+        messageData.currentPage?.name,
+        messageData.currentPage?.isLoading,
+        basicData.serverStatus,
+        basicData.agentConfig,
+        basicData.updatePageLoading,
+        messageData.addMessage,
+        messageData.updateMessage,
+        basicData.API_BASE_URL
+        // toolSelection 関連の依存関係をすべて削除
+    ]);
+};
+
+// 設定モーダル専用フック（最適化版）
+export const useSettingsModalIsolated = () => {
+    const settingsModal = useSettingsModal();
+    const basicData = useBasicData();
+
+    return useMemo(() => ({
+        showSettings: settingsModal.showSettings,
+        setShowSettings: settingsModal.setShowSettings,
+        agentConfig: basicData.agentConfig,
+        API_BASE_URL: basicData.API_BASE_URL,
+        // 必要なときだけ呼び出される関数（直接渡す）
+        fetchAgentConfig: basicData.fetchAgentConfig,
+        checkServerHealth: basicData.checkServerHealth,
+        dispatch: basicData.dispatch
+    }), [
+        // showSettingsの変更のみを監視（最も重要な依存関係）
+        settingsModal.showSettings,
+        settingsModal.setShowSettings,
+        // agentConfigの参照変更のみを監視（内容の変更は無視）
+        basicData.agentConfig
+        // API_BASE_URLと関数は安定している前提で依存関係から除外
+    ]);
 };

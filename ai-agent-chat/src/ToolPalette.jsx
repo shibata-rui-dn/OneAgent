@@ -12,7 +12,8 @@ ToolIcon.displayName = 'ToolIcon';
 
 const ToolPalette = memo(() => {
   const { 
-    currentPage, 
+    currentPageId,
+    selectedTools,
     tools, 
     serverStatus, 
     toggleToolInPage,
@@ -20,27 +21,27 @@ const ToolPalette = memo(() => {
   } = useToolPaletteIsolated();
 
   // 詳細デバッグログ
-  console.log('ToolPalette rendering (ISOLATED)', { 
-    pageId: currentPage?.id,
+  console.log('ToolPalette rendering (OPTIMIZED)', { 
+    pageId: currentPageId,
     toolCount: tools?.length,
-    selectedCount: currentPage?.selectedTools?.size,
-    selectedTools: currentPage?.selectedTools ? [...currentPage.selectedTools] : [],
+    selectedCount: selectedTools?.size,
+    selectedTools: selectedTools ? [...selectedTools] : [],
     allTools: tools?.map(t => t.name) || [],
     timestamp: Date.now()
   });
 
-  if (!currentPage) return null;
+  if (!currentPageId) return null;
 
   const handleSelectAll = () => {
     console.log('Select All clicked', { 
-      currentPageId: currentPage.id,
+      currentPageId: currentPageId,
       toolNames: tools.map(t => t.name)
     });
     
     dispatch({
       type: 'UPDATE_PAGE',
       payload: {
-        id: currentPage.id,
+        id: currentPageId,
         updates: { selectedTools: new Set(tools.map(t => t.name)) }
       }
     });
@@ -48,13 +49,13 @@ const ToolPalette = memo(() => {
 
   const handleDeselectAll = () => {
     console.log('Deselect All clicked', { 
-      currentPageId: currentPage.id
+      currentPageId: currentPageId
     });
     
     dispatch({
       type: 'UPDATE_PAGE',
       payload: {
-        id: currentPage.id,
+        id: currentPageId,
         updates: { selectedTools: new Set() }
       }
     });
@@ -62,12 +63,12 @@ const ToolPalette = memo(() => {
 
   const handleToolToggle = (toolName) => {
     console.log('Tool toggle clicked', { 
-      currentPageId: currentPage.id,
+      currentPageId: currentPageId,
       toolName,
-      wasSelected: currentPage.selectedTools.has(toolName)
+      wasSelected: selectedTools.has(toolName)
     });
     
-    toggleToolInPage(currentPage.id, toolName);
+    toggleToolInPage(currentPageId, toolName);
   };
 
   return (
@@ -78,7 +79,7 @@ const ToolPalette = memo(() => {
           ツールパレット
         </h3>
         <div className="text-sm text-gray-600 flex items-center justify-between">
-          <span>選択中: {currentPage?.selectedTools?.size || 0}/{tools.length}</span>
+          <span>選択中: {selectedTools?.size || 0}/{tools.length}</span>
           <div className="flex items-center">
             <div className={`w-2 h-2 rounded-full mr-1 ${
               serverStatus === 'connected' ? 'bg-green-500' :
@@ -95,7 +96,7 @@ const ToolPalette = memo(() => {
       <div className="flex-1 p-3 overflow-y-auto">
         <div className="grid grid-cols-1 gap-2">
           {tools.map((tool) => {
-            const isSelected = currentPage?.selectedTools?.has(tool.name);
+            const isSelected = selectedTools?.has(tool.name);
             
             return (
               <button
@@ -161,6 +162,10 @@ const ToolPalette = memo(() => {
       </div>
     </div>
   );
+}, (prevProps, nextProps) => {
+  // ToolPalette用のカスタム比較関数
+  // propsが変わらない限り再レンダリングしない
+  return true; // このコンポーネントはpropsを受け取らないので常にtrueを返す
 });
 
 ToolPalette.displayName = 'ToolPalette';

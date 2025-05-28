@@ -1,6 +1,29 @@
 import React, { memo } from 'react';
 import { Plus, Settings, X } from 'lucide-react';
-import { useIconBarIsolated } from './IsolatedContexts';
+import { useIconBarIsolated, useSettingsButtonIsolated } from './IsolatedContexts';
+
+// 設定ボタンを独立したコンポーネントとして分離
+const SettingsButton = memo(() => {
+  const { setShowSettings } = useSettingsButtonIsolated();
+
+  // デバッグ用ログ
+  console.log('SettingsButton rendering (ISOLATED)', { 
+    timestamp: Date.now()
+  });
+
+  return (
+    <button
+      onClick={() => setShowSettings(true)}
+      className="w-12 h-12 bg-gray-700 rounded-xl flex items-center justify-center hover:bg-gray-600 transition-all duration-300 shadow-md hover:shadow-lg transform hover:scale-105"
+      title="AI設定"
+    >
+      <Settings size={20} className="text-gray-300" />
+    </button>
+  );
+}, (prevProps, nextProps) => {
+  // SettingsButtonはpropsを受け取らないので、常にtrueを返して再レンダリングを防ぐ
+  return true;
+});
 
 const IconBar = memo(() => {
   const { 
@@ -10,10 +33,10 @@ const IconBar = memo(() => {
     deletePage, 
     getAnimalEmoji,
     dispatch
-  } = useIconBarIsolated();
+  } = useIconBarIsolated(); // 設定関連を除外
 
   // デバッグ用ログ
-  console.log('IconBar rendering (ISOLATED)', { 
+  console.log('IconBar rendering (SETTINGS-ISOLATED)', { 
     pageCount: pages?.length,
     currentPageId,
     timestamp: Date.now()
@@ -60,18 +83,17 @@ const IconBar = memo(() => {
         ))}
       </div>
 
-      {/* 設定ボタン */}
-      <button
-        onClick={() => dispatch({ type: 'SET_SHOW_SETTINGS', payload: true })}
-        className="w-12 h-12 bg-gray-700 rounded-xl flex items-center justify-center hover:bg-gray-600 transition-all duration-300 shadow-md hover:shadow-lg transform hover:scale-105"
-        title="AI設定"
-      >
-        <Settings size={20} className="text-gray-300" />
-      </button>
+      {/* 設定ボタン（独立したコンポーネント） */}
+      <SettingsButton />
     </div>
   );
+}, (prevProps, nextProps) => {
+  // IconBar用のカスタム比較関数
+  // propsが変わらない限り再レンダリングしない
+  return true; // このコンポーネントはpropsを受け取らないので常にtrueを返す
 });
 
+SettingsButton.displayName = 'SettingsButton';
 IconBar.displayName = 'IconBar';
 
 export default IconBar;

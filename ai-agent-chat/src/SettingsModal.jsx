@@ -1,19 +1,29 @@
-import React, { useState, useEffect, memo } from 'react';
+import React, { useState, useEffect, memo, useCallback, useRef } from 'react';
 import {
   Settings, X, Server, Key, Globe, AlertCircle, Loader, 
   RefreshCw, Save, Copy, Edit3, Brain
 } from 'lucide-react';
-import { useApp } from './AppContext';
+import { useSettingsModalIsolated } from './IsolatedContexts';
 
 const SettingsModal = memo(() => {
   const { 
     showSettings, 
+    setShowSettings,
     agentConfig, 
     fetchAgentConfig, 
     checkServerHealth,
     dispatch,
     API_BASE_URL
-  } = useApp();
+  } = useSettingsModalIsolated();
+
+  // デバッグ用ログ
+  console.log('SettingsModal rendering (OPTIMIZED)', { 
+    showSettings,
+    timestamp: Date.now()
+  });
+
+  // 初期化済みフラグを追加
+  const initializedRef = useRef(false);
 
   const [tempConfig, setTempConfig] = useState({
     provider: 'openai',
@@ -33,42 +43,74 @@ const SettingsModal = memo(() => {
   const [isLoadingEnv, setIsLoadingEnv] = useState(false);
   const [envStatus, setEnvStatus] = useState('');
 
-  // 設定モーダルが開かれたときに現在の設定を読み込む
-  useEffect(() => {
-    if (showSettings) {
-      loadCurrentSettings();
-    }
-  }, [showSettings, agentConfig]);
-
-  const loadCurrentSettings = async () => {
+  // 設定読み込み関数（依存関係を最小化）
+  const loadCurrentSettings = useCallback(async () => {
     try {
+      // 初期化済みの場合はスキップ
+      if (initializedRef.current) return;
+
+      const newConfig = {
+        provider: 'openai',
+        model: 'gpt-4o-mini',
+        temperature: 0.7,
+        streaming: true,
+        openaiApiKey: '',
+        azureEndpoint: '',
+        azureApiVersion: '2024-02-15-preview',
+        localLlmUrl: 'http://localhost:8000',
+        localLlmModel: 'Qwen/Qwen2.5-Coder-32B-Instruct'
+      };
+
+      // agentConfigから設定を取得
       if (agentConfig?.config) {
-        setTempConfig(prev => ({
-          ...prev,
+        Object.assign(newConfig, {
           provider: agentConfig.config.provider || 'openai',
           model: agentConfig.config.model || 'gpt-4o-mini',
           temperature: agentConfig.config.temperature || 0.7,
           streaming: agentConfig.config.streaming !== false,
           localLlmUrl: agentConfig.config.localLlmUrl || 'http://localhost:8000',
           localLlmModel: agentConfig.config.localLlmModel || 'Qwen/Qwen2.5-Coder-32B-Instruct'
-        }));
+        });
       }
 
-      const envResponse = await fetch(`${API_BASE_URL}/env`);
-      if (envResponse.ok) {
-        const envData = await envResponse.json();
-        if (envData.currentConfig) {
-          setTempConfig(prev => ({
-            ...prev,
-            azureEndpoint: envData.currentConfig.AZURE_OPENAI_ENDPOINT || '',
-            azureApiVersion: envData.currentConfig.AZURE_OPENAI_API_VERSION || '2024-02-15-preview'
-          }));
+      // 環境変数から追加設定を取得
+      try {
+        const envResponse = await fetch(`${API_BASE_URL}/env`);
+        if (envResponse.ok) {
+          const envData = await envResponse.json();
+          if (envData.currentConfig) {
+            Object.assign(newConfig, {
+              azureEndpoint: envData.currentConfig.AZURE_OPENAI_ENDPOINT || '',
+              azureApiVersion: envData.currentConfig.AZURE_OPENAI_API_VERSION || '2024-02-15-preview'
+            });
+          }
         }
+      } catch (envError) {
+        console.warn('環境変数取得エラー:', envError);
       }
+
+      // 1回だけ状態を更新
+      setTempConfig(newConfig);
+      initializedRef.current = true;
+
     } catch (error) {
       console.error('現在の設定読み込みエラー:', error);
     }
-  };
+  }, [agentConfig, API_BASE_URL]);
+
+  // モーダルが開かれたときのみ初期化
+  useEffect(() => {
+    if (showSettings && !initializedRef.current) {
+      loadCurrentSettings();
+    }
+  }, [showSettings, loadCurrentSettings]);
+
+  // モーダルが閉じられたときに初期化フラグをリセット
+  useEffect(() => {
+    if (!showSettings) {
+      initializedRef.current = false;
+    }
+  }, [showSettings]);
 
   const fetchEnvData = async () => {
     setIsLoadingEnv(true);
@@ -288,7 +330,7 @@ const SettingsModal = memo(() => {
             AI設定
           </h2>
           <button
-            onClick={() => dispatch({ type: 'SET_SHOW_SETTINGS', payload: false })}
+            onClick={() => setShowSettings(false)}
             className="text-gray-400 hover:text-gray-600 p-1 rounded-full hover:bg-gray-100 transition-colors"
           >
             <X size={24} />
@@ -462,7 +504,7 @@ const SettingsModal = memo(() => {
 
             {tempConfig.provider === 'openai' && (
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2 flex items-center">
+                <label className="flex items-center text-sm font-semibold text-gray-700 mb-2">
                   <Key className="w-4 h-4 mr-2" />
                   OpenAI API Key
                 </label>
@@ -482,7 +524,7 @@ const SettingsModal = memo(() => {
             {tempConfig.provider === 'azureopenai' && (
               <>
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2 flex items-center">
+                  <label className="flex items-center text-sm font-semibold text-gray-700 mb-2">
                     <Key className="w-4 h-4 mr-2" />
                     Azure OpenAI API Key
                   </label>
@@ -495,7 +537,7 @@ const SettingsModal = memo(() => {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2 flex items-center">
+                  <label className="flex items-center text-sm font-semibold text-gray-700 mb-2">
                     <Globe className="w-4 h-4 mr-2" />
                     Azure OpenAI エンドポイント
                   </label>
@@ -525,7 +567,7 @@ const SettingsModal = memo(() => {
             {tempConfig.provider === 'localllm' && (
               <>
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2 flex items-center">
+                  <label className="flex items-center text-sm font-semibold text-gray-700 mb-2">
                     <Server className="w-4 h-4 mr-2" />
                     ローカルLLM URL
                   </label>
@@ -615,9 +657,9 @@ const SettingsModal = memo(() => {
                   </button>
                   <button
                     onClick={copyEnvToClipboard}
-                    className="px-3 py-1 bg-gray-100 text-gray-700 rounded text-sm font-medium hover:bg-gray-200 transition-colors"
+                    className="flex items-center px-3 py-1 bg-gray-100 text-gray-700 rounded text-sm font-medium hover:bg-gray-200 transition-colors"
                   >
-                    <Copy className="w-4 h-4 inline mr-1" />
+                    <Copy className="w-4 h-4 mr-1" />
                     コピー
                   </button>
                 </div>
@@ -661,7 +703,7 @@ const SettingsModal = memo(() => {
 
         <div className="flex space-x-3 mt-8">
           <button
-            onClick={() => dispatch({ type: 'SET_SHOW_SETTINGS', payload: false })}
+            onClick={() => setShowSettings(false)}
             className="flex-1 px-4 py-3 border-2 border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium"
           >
             {activeTab === 'env' ? '閉じる' : 'キャンセル'}

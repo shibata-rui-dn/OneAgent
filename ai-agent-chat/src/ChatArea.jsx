@@ -1,26 +1,107 @@
 import React, { memo, useCallback, useRef } from 'react';
-import { Edit3 } from 'lucide-react';
-import { useApp } from './AppContext';
+import { Edit3, Bot, Zap, Brain } from 'lucide-react';
+import { useChatAreaIsolated, useChatHeaderIsolated } from './IsolatedContexts';
 import MessageList from './MessageList';
 import MessageInput from './MessageInput';
+
+// ChatHeaderを独立したコンポーネントとして分離（ツール選択の変更に反応）
+const ChatHeader = memo(() => {
+  const { 
+    currentPageId,
+    currentPageName,
+    editingPageName,
+    serverStatus,
+    agentConfig,
+    selectedToolsSize, // ツール選択数（リアルタイム更新）
+    updatePageName,
+    getAnimalEmoji,
+    dispatch
+  } = useChatHeaderIsolated(); // 専用フックを使用
+
+  // デバッグ用ログ
+  console.log('ChatHeader rendering (TOOL-AWARE)', { 
+    pageId: currentPageId,
+    selectedToolsSize,
+    timestamp: Date.now()
+  });
+
+  if (!currentPageId || !currentPageName) return null;
+
+  return (
+    <div className="bg-white border-b px-6 py-4 flex items-center justify-between shadow-sm">
+      <div className="flex items-center space-x-4">
+        <span className="text-3xl">{getAnimalEmoji(currentPageName)}</span>
+        {editingPageName === currentPageId ? (
+          <input
+            type="text"
+            value={currentPageName}
+            onChange={(e) => updatePageName(currentPageId, e.target.value)}
+            onBlur={() => dispatch({ type: 'SET_EDITING_PAGE_NAME', payload: null })}
+            onKeyPress={(e) => e.key === 'Enter' && dispatch({ type: 'SET_EDITING_PAGE_NAME', payload: null })}
+            className="text-xl font-bold bg-transparent border-b-2 border-blue-500 focus:outline-none px-1"
+            autoFocus
+          />
+        ) : (
+          <h1
+            className="text-xl font-bold cursor-pointer hover:text-blue-600 transition-colors flex items-center"
+            onClick={() => dispatch({ type: 'SET_EDITING_PAGE_NAME', payload: currentPageId })}
+          >
+            {currentPageName}
+            <Edit3 size={16} className="ml-2 text-gray-400" />
+          </h1>
+        )}
+      </div>
+
+      <div className="flex items-center space-x-4">
+        <div className="flex items-center space-x-2">
+          <div className={`w-3 h-3 rounded-full ${
+            serverStatus === 'connected' ? 'bg-green-500' :
+            serverStatus === 'error' ? 'bg-red-500' : 'bg-yellow-500'
+          }`} />
+          <span className="text-sm text-gray-600">
+            {selectedToolsSize} ツール選択中
+          </span>
+        </div>
+        <div className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full flex items-center">
+          <div className="w-2 h-2 bg-green-400 rounded-full mr-1"></div>
+          {serverStatus === 'connected' ? 'オンライン' :
+            serverStatus === 'error' ? 'オフライン' : '接続中'}
+        </div>
+        {agentConfig?.langChainEnabled && (
+          <div className="text-xs text-purple-600 bg-purple-100 px-2 py-1 rounded-full font-medium">
+            LangChain Agent
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}, (prevProps, nextProps) => {
+  // ChatHeaderは自動的に適切な比較を行う（useChatHeaderIsolatedの依存関係による）
+  return false; // 常に依存関係をチェック
+});
 
 const ChatArea = memo(() => {
   const { 
     currentPage, 
     serverStatus, 
     agentConfig,
-    editingPageName,
-    updatePageName,
     updatePageLoading,
     addMessage,
     updateMessage,
-    getAnimalEmoji,
     API_BASE_URL,
-    dispatch
-  } = useApp();
+    hasMessages,
+    selectedToolsSize // 初期画面でのみ利用可能
+  } = useChatAreaIsolated(); // 条件付きでツール選択情報を含む専用フック
 
-  // デバッグ用ログ（本番では削除）
-  // console.log('ChatArea rendering');
+  // デバッグ用ログ
+  console.log('ChatArea rendering (CONDITIONAL TOOL-AWARE)', { 
+    pageId: currentPage?.id,
+    messageCount: currentPage?.messages?.length,
+    isLoading: currentPage?.isLoading,
+    hasMessages,
+    selectedToolsSize: hasMessages ? 'N/A' : selectedToolsSize,
+    timestamp: Date.now()
+  });
 
   const abortControllerRef = useRef(null);
 
@@ -136,18 +217,12 @@ const ChatArea = memo(() => {
   }, [API_BASE_URL, addMessage, updateMessage]);
 
   const updateStreamingMessage = useCallback((messageId, chunk, pageId) => {
-    // デバッグログ（本番では削除）
-    // console.log('Updating streaming message:', { messageId, chunk, pageId });
-    
     let updates = {};
 
     switch (chunk.type) {
       case 'text':
-        // 関数型更新を使用して確実に累積
         updates.content = (currentContent) => {
           const newContent = (currentContent || '') + chunk.content;
-          // デバッグログ（本番では削除）
-          // console.log('Content update:', { currentContent, chunkContent: chunk.content, newContent });
           return newContent;
         };
         break;
@@ -156,7 +231,6 @@ const ChatArea = memo(() => {
         updates.toolCalls = (currentToolCalls = []) => {
           const newToolCalls = [...currentToolCalls];
           
-          // 既存のツール呼び出しを検索
           let existingToolCall = newToolCalls.find(tc =>
             tc.name === chunk.tool_name && !tc.result && !tc.error
           );
@@ -212,7 +286,6 @@ const ChatArea = memo(() => {
         break;
     }
 
-    // updateMessage関数を使用
     updateMessage(pageId, messageId, updates);
   }, [updateMessage]);
 
@@ -264,63 +337,50 @@ const ChatArea = memo(() => {
 
   return (
     <div className="flex-1 flex flex-col bg-gradient-to-br from-gray-50 to-white min-w-0">
-      {/* ヘッダー */}
-      <div className="bg-white border-b px-6 py-4 flex items-center justify-between shadow-sm">
-        <div className="flex items-center space-x-4">
-          <span className="text-3xl">{getAnimalEmoji(currentPage.name)}</span>
-          {editingPageName === currentPage.id ? (
-            <input
-              type="text"
-              value={currentPage.name}
-              onChange={(e) => updatePageName(currentPage.id, e.target.value)}
-              onBlur={() => dispatch({ type: 'SET_EDITING_PAGE_NAME', payload: null })}
-              onKeyPress={(e) => e.key === 'Enter' && dispatch({ type: 'SET_EDITING_PAGE_NAME', payload: null })}
-              className="text-xl font-bold bg-transparent border-b-2 border-blue-500 focus:outline-none px-1"
-              autoFocus
-            />
-          ) : (
-            <h1
-              className="text-xl font-bold cursor-pointer hover:text-blue-600 transition-colors flex items-center"
-              onClick={() => dispatch({ type: 'SET_EDITING_PAGE_NAME', payload: currentPage.id })}
-            >
-              {currentPage.name}
-              <Edit3 size={16} className="ml-2 text-gray-400" />
-            </h1>
-          )}
-        </div>
+      {/* ヘッダー（独立したコンポーネント、ツール選択の変更に反応） */}
+      <ChatHeader />
 
-        <div className="flex items-center space-x-4">
-          <div className="flex items-center space-x-2">
-            <div className={`w-3 h-3 rounded-full ${
-              serverStatus === 'connected' ? 'bg-green-500' :
-              serverStatus === 'error' ? 'bg-red-500' : 'bg-yellow-500'
-            }`} />
-            <span className="text-sm text-gray-600">
-              {currentPage?.selectedTools?.size || 0} ツール選択中
-            </span>
-          </div>
-          <div className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full flex items-center">
-            <div className="w-2 h-2 bg-green-400 rounded-full mr-1"></div>
-            {serverStatus === 'connected' ? 'オンライン' :
-              serverStatus === 'error' ? 'オフライン' : '接続中'}
-          </div>
-          {agentConfig?.langChainEnabled && (
-            <div className="text-xs text-purple-600 bg-purple-100 px-2 py-1 rounded-full font-medium">
-              LangChain Agent
+      {/* 初期画面またはメッセージリスト */}
+      {!hasMessages ? (
+        // 初期画面（ツール選択数を表示）
+        <div className="flex-1 flex items-center justify-center p-6">
+          <div className="text-center text-gray-500">
+            <div className="w-24 h-24 mx-auto mb-6 bg-gradient-to-r from-blue-100 to-purple-100 rounded-full flex items-center justify-center">
+              <Bot size={40} className="text-blue-500" />
             </div>
-          )}
+            <h2 className="text-2xl font-bold mb-2">{currentPage.name}との会話</h2>
+            <p className="text-gray-400 mb-4">何でもお気軽にお聞かせください</p>
+            
+            {/* ツール選択数を表示（復活） */}
+            <div className="inline-flex items-center space-x-2 bg-blue-50 px-4 py-2 rounded-full text-sm text-blue-600">
+              <Zap size={16} />
+              <span>{selectedToolsSize}個のツールが利用可能</span>
+            </div>
+            
+            {agentConfig?.langChainEnabled && (
+              <div className="inline-flex items-center space-x-2 bg-purple-50 px-4 py-2 rounded-full text-sm text-purple-600 ml-2">
+                <Brain className="w-4 h-4" />
+                <span>高度な推論モード有効</span>
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      ) : (
+        // メッセージリスト（メッセージ変更のみに反応）
+        <MessageList />
+      )}
 
-      {/* メッセージリスト */}
-      <MessageList />
-
-      {/* 入力エリア */}
+      {/* 入力エリア（独立） */}
       <MessageInput onSendMessage={handleSendMessage} />
     </div>
   );
+}, (prevProps, nextProps) => {
+  // ChatAreaは内部状態が変更された場合のみ再レンダリング
+  // propsを受け取らないので、常にtrueを返して不要な再レンダリングを防ぐ
+  return true;
 });
 
 ChatArea.displayName = 'ChatArea';
+ChatHeader.displayName = 'ChatHeader';
 
 export default ChatArea;

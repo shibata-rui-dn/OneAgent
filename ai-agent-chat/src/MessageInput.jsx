@@ -7,7 +7,7 @@ const MessageInput = memo(({ onSendMessage }) => {
   const [inputMessage, setInputMessage] = useState('');
 
   // デバッグ用ログ
-  console.log('MessageInput rendering (ISOLATED)', { 
+  console.log('MessageInput rendering (OPTIMIZED)', { 
     pageId: currentPage?.id,
     isLoading: currentPage?.isLoading,
     timestamp: Date.now()
@@ -60,6 +60,9 @@ const MessageInput = memo(({ onSendMessage }) => {
       </div>
     </div>
   );
+}, (prevProps, nextProps) => {
+  // onSendMessage が変わらない限り再レンダリングしない
+  return prevProps.onSendMessage === nextProps.onSendMessage;
 });
 
 MessageInput.displayName = 'MessageInput';
