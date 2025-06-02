@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { AuthProvider, ProtectedRoute } from './oauth-components.jsx';
 import { Loader, Bot } from 'lucide-react';
 import { AppProvider, useApp } from './AppContext';
 import { IsolatedProviders } from './IsolatedContexts';
@@ -7,11 +8,12 @@ import ToolPalette from './ToolPalette';
 import ChatArea from './ChatArea';
 import SettingsModal from './SettingsModal.jsx';
 
+
 const AppContent = () => {
   const appContext = useApp();
-  const { 
-    isInitialized, 
-    currentPage, 
+  const {
+    isInitialized,
+    currentPage,
     pages,
     tools,
     createNewPage,
@@ -38,12 +40,12 @@ const AppContent = () => {
         }
         return page;
       });
-      
+
       // 実際に変更があった場合のみ更新
-      const hasChanges = updatedPages.some((page, index) => 
+      const hasChanges = updatedPages.some((page, index) =>
         page.selectedTools.size !== (pages || [])[index]?.selectedTools.size
       );
-      
+
       if (hasChanges) {
         dispatch({ type: 'SET_PAGES', payload: updatedPages });
       }
@@ -105,9 +107,13 @@ const AppContent = () => {
 
 const MultiPageAgentChat = () => {
   return (
-    <AppProvider>
-      <AppContent />
-    </AppProvider>
+    <AuthProvider>
+      <ProtectedRoute>
+        <AppProvider>
+          <AppContent />
+        </AppProvider>
+      </ProtectedRoute>
+    </AuthProvider>
   );
 };
 

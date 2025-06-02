@@ -1,0 +1,81 @@
+{
+  "name": "secure_user_file_manager",
+  "description": "OAuth認証を使用したセキュアなユーザーファイル管理システム。ファイル管理、最近の更新、お気に入り、ゴミ箱機能を提供。",
+  "version": "3.1.0",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": [
+          "create_folder",
+          "create_file",
+          "read_file",
+          "update_file",
+          "delete",
+          "list",
+          "search",
+          "move",
+          "copy",
+          "get_quota",
+          "get_recent_updates",
+          "add_to_favorites",
+          "remove_from_favorites",
+          "get_favorites",
+          "move_to_trash",
+          "restore_from_trash",
+          "list_trash",
+          "empty_trash",
+          "permanently_delete"
+        ],
+        "description": "実行するアクション"
+      },
+      "path": {
+        "type": "string",
+        "description": "ファイルまたはフォルダのパス（メインエリア相対またはゴミ箱相対）"
+      },
+      "content": {
+        "type": "string",
+        "description": "ファイルの内容（create_file、update_fileで使用）"
+      },
+      "newPath": {
+        "type": "string",
+        "description": "移動先パス（move、copyで使用）"
+      },
+      "searchQuery": {
+        "type": "string",
+        "description": "検索クエリ（searchで使用）"
+      },
+      "searchType": {
+        "type": "string",
+        "enum": [
+          "filename",
+          "content",
+          "both"
+        ],
+        "description": "検索タイプ（searchで使用、デフォルト: both）"
+      },
+      "limit": {
+        "type": "number",
+        "description": "結果の最大件数（get_recent_updatesで使用、デフォルト: 20）"
+      }
+    },
+    "required": [
+      "action"
+    ],
+    "additionalProperties": false
+  },
+  "security": {
+    "requiresAuth": true,
+    "scopes": [
+      "read",
+      "write"
+    ]
+  },
+  "icon": {
+    "filename": "secure_file_manager_icon.svg",
+    "description": "拡張セキュアファイル管理アイコン",
+    "type": "4",
+    "colorScheme": "green"
+  }
+}

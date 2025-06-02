@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <!-- Generated icon for add_numbers -->
-  <!-- Description: 加算計算アイコン -->
-  <rect x="4" y="2" width="16" height="20" rx="2" fill="#93C5FD" stroke="#3B82F6" stroke-width="2"/>
-  <rect x="6" y="4" width="12" height="3" fill="#3B82F6" rx="1"/>
-  <line x1="12" y1="10" x2="12" y2="18" stroke="#3B82F6" stroke-width="2"/>
-  <line x1="8" y1="14" x2="16" y2="14" stroke="#3B82F6" stroke-width="2"/>
-</svg>

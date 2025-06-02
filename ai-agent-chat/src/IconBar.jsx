@@ -1,6 +1,114 @@
-import React, { memo } from 'react';
-import { Plus, Settings, X } from 'lucide-react';
+import React, { memo, useState, useRef, useEffect } from 'react';
+import { Plus, Settings, X, User, LogOut } from 'lucide-react';
 import { useIconBarIsolated, useSettingsButtonIsolated } from './IsolatedContexts';
+import { useAuth } from './oauth-components';
+
+// ログアウトポップアップコンポーネント
+const LogoutPopup = memo(({ isOpen, onClose, onLogout, user, anchorRef }) => {
+  const [popupStyle, setPopupStyle] = useState({});
+
+  useEffect(() => {
+    if (isOpen && anchorRef.current) {
+      const rect = anchorRef.current.getBoundingClientRect();
+      setPopupStyle({
+        position: 'fixed',
+        left: rect.right + 8,
+        bottom: window.innerHeight - rect.bottom,
+        zIndex: 1000
+      });
+    }
+  }, [isOpen, anchorRef]);
+
+  if (!isOpen) return null;
+
+  return (
+    <>
+      {/* オーバーレイ */}
+      <div 
+        className="fixed inset-0 bg-transparent z-40"
+        onClick={onClose}
+      />
+      
+      {/* ポップアップ */}
+      <div 
+        className="bg-white border border-gray-200 rounded-lg shadow-lg py-2 min-w-[200px] z-50"
+        style={popupStyle}
+      >
+        <div className="px-4 py-2 border-b border-gray-100">
+          <div className="flex items-center space-x-3">
+            <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center">
+              <span className="text-white font-semibold text-sm">
+                {user?.profile?.displayName?.charAt(0) || user?.username?.charAt(0)?.toUpperCase() || 'U'}
+              </span>
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-gray-900 truncate">
+                {user?.profile?.displayName || user?.username || 'ユーザー'}
+              </p>
+              <p className="text-xs text-gray-500 truncate">
+                {user?.email || ''}
+              </p>
+            </div>
+          </div>
+        </div>
+        
+        <button
+          onClick={onLogout}
+          className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 transition-colors duration-200 flex items-center"
+        >
+          <LogOut size={16} className="mr-2" />
+          ログアウト
+        </button>
+      </div>
+    </>
+  );
+});
+
+// ユーザーアイコンボタンコンポーネント
+const UserIconButton = memo(() => {
+  const { user } = useIconBarIsolated();
+  const { logout } = useAuth();
+  const [showLogoutPopup, setShowLogoutPopup] = useState(false);
+  const buttonRef = useRef(null);
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+    } catch (error) {
+      console.error('ログアウトエラー:', error);
+    }
+    setShowLogoutPopup(false);
+  };
+
+  const togglePopup = () => {
+    setShowLogoutPopup(!showLogoutPopup);
+  };
+
+  return (
+    <>
+      <button
+        ref={buttonRef}
+        onClick={togglePopup}
+        className="w-12 h-12 bg-gray-700 rounded-xl flex items-center justify-center hover:bg-gray-600 transition-all duration-300 shadow-md hover:shadow-lg transform hover:scale-105"
+        title={`${user?.profile?.displayName || user?.username || 'ユーザー'} - アカウント設定`}
+      >
+        <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center">
+          <span className="text-white font-semibold text-sm">
+            {user?.profile?.displayName?.charAt(0) || user?.username?.charAt(0)?.toUpperCase() || 'U'}
+          </span>
+        </div>
+      </button>
+
+      <LogoutPopup
+        isOpen={showLogoutPopup}
+        onClose={() => setShowLogoutPopup(false)}
+        onLogout={handleLogout}
+        user={user}
+        anchorRef={buttonRef}
+      />
+    </>
+  );
+});
 
 // 設定ボタンを独立したコンポーネントとして分離
 const SettingsButton = memo(() => {
@@ -36,7 +144,7 @@ const IconBar = memo(() => {
   } = useIconBarIsolated(); // 設定関連を除外
 
   // デバッグ用ログ
-  console.log('IconBar rendering (SETTINGS-ISOLATED)', { 
+  console.log('IconBar rendering (USER-AWARE)', { 
     pageCount: pages?.length,
     currentPageId,
     timestamp: Date.now()
@@ -83,8 +191,14 @@ const IconBar = memo(() => {
         ))}
       </div>
 
-      {/* 設定ボタン（独立したコンポーネント） */}
-      <SettingsButton />
+      {/* 下部のボタン群 */}
+      <div className="space-y-3">
+        {/* 設定ボタン */}
+        <SettingsButton />
+        
+        {/* ユーザーアイコンボタン */}
+        <UserIconButton />
+      </div>
     </div>
   );
 }, (prevProps, nextProps) => {
@@ -93,6 +207,8 @@ const IconBar = memo(() => {
   return true; // このコンポーネントはpropsを受け取らないので常にtrueを返す
 });
 
+LogoutPopup.displayName = 'LogoutPopup';
+UserIconButton.displayName = 'UserIconButton';
 SettingsButton.displayName = 'SettingsButton';
 IconBar.displayName = 'IconBar';
 

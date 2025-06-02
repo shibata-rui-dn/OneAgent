@@ -1,4 +1,6 @@
-import React, { createContext, useContext, useReducer, useCallback, useMemo, useRef } from 'react';
+import React, { createContext, useContext, useReducer, useCallback, useMemo, useRef, useEffect } from 'react';
+import { useAuth } from './oauth-components'; // 認証フック追加
+import { useUserConfig } from './useUserConfig';
 
 const API_BASE_URL = 'http://localhost:3000';
 
@@ -27,7 +29,7 @@ const getAnimalEmoji = (name) => {
     return emojiMap[name] || '🐾';
 };
 
-// State management（showSettingsを削除）
+// State management（ユーザー設定統合完全版）
 const initialState = {
     pages: [],
     currentPageId: null,
@@ -36,8 +38,13 @@ const initialState = {
     serverStatus: 'connecting',
     agentConfig: null,
     editingPageName: null,
-    isInitialized: false
-    // showSettingsを削除
+    isInitialized: false,
+    // ユーザー設定関連を強化
+    userConfigEnabled: false,
+    effectiveConfig: null,
+    configInitialized: false,
+    aiConfigStatus: 'loading', // loading, ready, error
+    lastConfigUpdate: null
 };
 
 const appReducer = (state, action) => {
@@ -68,9 +75,6 @@ const appReducer = (state, action) => {
             };
 
         case 'UPDATE_PAGE':
-            console.log('UPDATE_PAGE action:', action.payload);
-
-            // ページ更新の最適化：特定のページのみを更新
             const targetPageIndex = (state.pages || []).findIndex(p => p.id === action.payload.id);
             if (targetPageIndex === -1) return state;
 
@@ -86,9 +90,6 @@ const appReducer = (state, action) => {
             };
 
         case 'TOGGLE_TOOL_IN_PAGE':
-            console.log('TOGGLE_TOOL_IN_PAGE action:', action.payload);
-
-            // ツール選択の最適化：対象ページのみを更新
             const toolPageIndex = (state.pages || []).findIndex(p => p.id === action.payload.pageId);
             if (toolPageIndex === -1) return state;
 
@@ -102,14 +103,6 @@ const appReducer = (state, action) => {
             } else {
                 newSelectedTools.add(action.payload.toolName);
             }
-
-            console.log('Tool toggle result:', {
-                pageId: targetPage.id,
-                toolName: action.payload.toolName,
-                wasSelected,
-                nowSelected: !wasSelected,
-                newSize: newSelectedTools.size
-            });
 
             toolUpdatedPages[toolPageIndex] = {
                 ...targetPage,
@@ -142,7 +135,22 @@ const appReducer = (state, action) => {
         case 'SET_INITIALIZED':
             return { ...state, isInitialized: action.payload };
 
-        // SET_SHOW_SETTINGSケースを削除
+        // ユーザー設定関連のアクションを強化
+        case 'SET_USER_CONFIG_ENABLED':
+            return { ...state, userConfigEnabled: action.payload };
+
+        case 'SET_EFFECTIVE_CONFIG':
+            return { 
+                ...state, 
+                effectiveConfig: action.payload,
+                lastConfigUpdate: new Date().toISOString()
+            };
+
+        case 'SET_CONFIG_INITIALIZED':
+            return { ...state, configInitialized: action.payload };
+
+        case 'SET_AI_CONFIG_STATUS':
+            return { ...state, aiConfigStatus: action.payload };
 
         case 'INITIALIZE_PAGES':
             // 初期ページがない場合のみ作成
@@ -156,9 +164,13 @@ const appReducer = (state, action) => {
                         : new Set(),
                     isLoading: false,
                     settings: {
-                        streaming: true,
-                        temperature: 0.7,
-                        model: 'gpt-4o-mini'
+                        streaming: state.effectiveConfig?.streaming !== undefined 
+                            ? state.effectiveConfig.streaming 
+                            : true,
+                        temperature: state.effectiveConfig?.temperature !== undefined 
+                            ? state.effectiveConfig.temperature 
+                            : 0.7,
+                        model: state.effectiveConfig?.model || 'gpt-4o-mini'
                     }
                 };
                 return {
@@ -169,8 +181,30 @@ const appReducer = (state, action) => {
             }
             return state;
 
+        case 'UPDATE_PAGE_SETTINGS_FROM_CONFIG':
+            // ユーザー設定の変更を既存ページに反映
+            if (!state.effectiveConfig) return state;
+            
+            const configUpdatedPages = (state.pages || []).map(page => ({
+                ...page,
+                settings: {
+                    ...page.settings,
+                    streaming: state.effectiveConfig.streaming !== undefined 
+                        ? state.effectiveConfig.streaming 
+                        : page.settings.streaming,
+                    temperature: state.effectiveConfig.temperature !== undefined 
+                        ? state.effectiveConfig.temperature 
+                        : page.settings.temperature,
+                    model: state.effectiveConfig.model || page.settings.model
+                }
+            }));
+
+            return {
+                ...state,
+                pages: configUpdatedPages
+            };
+
         case 'ADD_MESSAGE':
-            // メッセージ追加の最適化：対象ページのみを更新
             const messagePageIndex = (state.pages || []).findIndex(p => p.id === action.payload.pageId);
             if (messagePageIndex === -1) return state;
 
@@ -186,7 +220,6 @@ const appReducer = (state, action) => {
             };
 
         case 'UPDATE_MESSAGE':
-            // ストリーミング最適化: 対象ページのみを更新
             const targetPageIndexMsg = (state.pages || []).findIndex(p => p.id === action.payload.pageId);
             if (targetPageIndexMsg === -1) return state;
 
@@ -206,13 +239,11 @@ const appReducer = (state, action) => {
 
             const updatedMessage = { ...targetMessage, ...updates };
 
-            // 最小限の更新: メッセージ配列のみ更新
             const updatedMessages = [...targetPageMsg.messages];
             updatedMessages[targetMessageIndex] = updatedMessage;
 
             const updatedPageMsg = { ...targetPageMsg, messages: updatedMessages };
 
-            // ページ配列の最小限更新
             const updatedPagesMsg = [...state.pages];
             updatedPagesMsg[targetPageIndexMsg] = updatedPageMsg;
 
@@ -231,33 +262,109 @@ const AppContext = createContext();
 export const AppProvider = ({ children }) => {
     const [state, dispatch] = useReducer(appReducer, initialState);
     const currentPageRef = useRef(null);
+    
+    // 認証フックを追加
+    const { authenticatedFetch, user } = useAuth();
 
-    // API functions - 依存関係を最小化
+    // ユーザー設定フックを統合（完全版）
+    const {
+        userConfig,
+        effectiveConfig,
+        configInfo,
+        isLoading: configLoading,
+        loadUserConfig,
+        updateUserConfig,
+        resetUserConfig,
+        refreshConfigs,
+        validateConfig,
+        hasCustomConfig
+    } = useUserConfig();
+
+    // 設定初期化状態の管理
+    const configInitializedRef = useRef(false);
+    const lastConfigHashRef = useRef('');
+
+    // ユーザー設定の変更を監視してstateに反映（強化版）
+    useEffect(() => {
+        if (effectiveConfig && user) {
+            const configHash = JSON.stringify({
+                provider: effectiveConfig.provider,
+                model: effectiveConfig.model,
+                temperature: effectiveConfig.temperature,
+                streaming: effectiveConfig.streaming,
+                hasCustomConfig: configInfo.hasUserOverrides
+            });
+
+            // 設定が実際に変更された場合のみ更新
+            if (lastConfigHashRef.current !== configHash) {
+                console.log('🔄 User config updated and applied:', {
+                    provider: effectiveConfig.provider,
+                    model: effectiveConfig.model,
+                    hasCustomSettings: configInfo.hasUserOverrides,
+                    userOverrideKeys: configInfo.userOverrideKeys,
+                    previousHash: lastConfigHashRef.current.substring(0, 20),
+                    newHash: configHash.substring(0, 20)
+                });
+
+                dispatch({ type: 'SET_EFFECTIVE_CONFIG', payload: effectiveConfig });
+                dispatch({ type: 'SET_USER_CONFIG_ENABLED', payload: configInfo.hasUserOverrides });
+                dispatch({ type: 'SET_AI_CONFIG_STATUS', payload: 'ready' });
+                
+                // 既存ページの設定も更新
+                if (configInitializedRef.current) {
+                    dispatch({ type: 'UPDATE_PAGE_SETTINGS_FROM_CONFIG' });
+                }
+
+                configInitializedRef.current = true;
+                lastConfigHashRef.current = configHash;
+
+                // エージェント設定も更新
+                if (configInitializedRef.current) {
+                    fetchAgentConfig();
+                }
+            }
+
+            if (!state.configInitialized) {
+                dispatch({ type: 'SET_CONFIG_INITIALIZED', payload: true });
+            }
+        }
+    }, [effectiveConfig, configInfo, user]);
+
+    // 設定読み込みエラーの監視
+    useEffect(() => {
+        if (configLoading) {
+            dispatch({ type: 'SET_AI_CONFIG_STATUS', payload: 'loading' });
+        } else if (!effectiveConfig && !configLoading) {
+            dispatch({ type: 'SET_AI_CONFIG_STATUS', payload: 'error' });
+        }
+    }, [configLoading, effectiveConfig]);
+
+    // API functions - ユーザー設定対応強化版
     const checkServerHealth = useCallback(async () => {
-        const response = await fetch(`${API_BASE_URL}/health`);
+        const response = await authenticatedFetch('/health');
         if (!response.ok) {
             throw new Error('サーバーに接続できません');
         }
         return response.json();
-    }, []);
+    }, [authenticatedFetch]);
 
     const fetchTools = useCallback(async () => {
         try {
-            const response = await fetch(`${API_BASE_URL}/tools`);
+            const response = await authenticatedFetch('/tools');
             const data = await response.json();
             dispatch({ type: 'SET_TOOLS', payload: data.tools || [] });
             await loadToolIcons(data.tools || []);
         } catch (error) {
             console.error('ツール取得エラー:', error);
         }
-    }, []);
+    }, [authenticatedFetch]);
 
     const loadToolIcons = useCallback(async (toolsList) => {
         const iconPromises = toolsList
             .filter(tool => tool.hasIcon)
             .map(async (tool) => {
                 try {
-                    const response = await fetch(`${API_BASE_URL}/tools/${tool.name}/icon`);
+                    const response = await authenticatedFetch(`/tools/${tool.name}/icon`);
                     if (response.ok) {
                         const svgText = await response.text();
                         return [tool.name, svgText];
@@ -278,19 +385,29 @@ export const AppProvider = ({ children }) => {
         });
 
         dispatch({ type: 'SET_TOOL_ICONS', payload: iconMap });
-    }, []);
+    }, [authenticatedFetch]);
 
     const fetchAgentConfig = useCallback(async () => {
         try {
-            const response = await fetch(`${API_BASE_URL}/agent/config`);
+            console.log('🤖 Fetching agent config with user settings...');
+            const response = await authenticatedFetch('/agent/config');
             const data = await response.json();
+            
+            console.log('📊 Agent config received:', {
+                provider: data.provider,
+                model: data.model,
+                hasCustomSettings: data.userConfig?.hasCustomSettings,
+                configSource: data.userConfig?.configSource
+            });
+            
             dispatch({ type: 'SET_AGENT_CONFIG', payload: data });
         } catch (error) {
             console.error('エージェント設定取得エラー:', error);
+            dispatch({ type: 'SET_AI_CONFIG_STATUS', payload: 'error' });
         }
-    }, []);
+    }, [authenticatedFetch]);
 
-    // Page management - 依存関係を最小化
+    // Page management（ユーザー設定対応）
     const createNewPage = useCallback(() => {
         const newPage = {
             id: Date.now().toString(),
@@ -299,15 +416,19 @@ export const AppProvider = ({ children }) => {
             selectedTools: new Set(),
             isLoading: false,
             settings: {
-                streaming: true,
-                temperature: 0.7,
-                model: 'gpt-4o-mini'
+                streaming: state.effectiveConfig?.streaming !== undefined 
+                    ? state.effectiveConfig.streaming 
+                    : true,
+                temperature: state.effectiveConfig?.temperature !== undefined 
+                    ? state.effectiveConfig.temperature 
+                    : 0.7,
+                model: state.effectiveConfig?.model || 'gpt-4o-mini'
             }
         };
 
         dispatch({ type: 'ADD_PAGE', payload: newPage });
         dispatch({ type: 'SET_CURRENT_PAGE', payload: newPage.id });
-    }, []);
+    }, [state.effectiveConfig]);
 
     const deletePage = useCallback((pageId) => {
         dispatch({ type: 'DELETE_PAGE', payload: pageId });
@@ -320,7 +441,6 @@ export const AppProvider = ({ children }) => {
         });
     }, []);
 
-    // ツール選択の最適化：安定した参照を持つコールバック
     const toggleToolInPage = useCallback((pageId, toolName) => {
         dispatch({
             type: 'TOGGLE_TOOL_IN_PAGE',
@@ -349,45 +469,162 @@ export const AppProvider = ({ children }) => {
         });
     }, []);
 
-    // Initialize app
+    // ユーザー設定管理関数（強化版）
+    const handleConfigUpdate = useCallback(async (configUpdates) => {
+        try {
+            console.log('🔄 Updating user config from App (ENHANCED):', configUpdates);
+            dispatch({ type: 'SET_AI_CONFIG_STATUS', payload: 'loading' });
+            
+            // 設定の妥当性を事前チェック
+            const validation = validateConfig(configUpdates);
+            if (!validation.valid) {
+                throw new Error(`設定が無効です: ${validation.errors.join(', ')}`);
+            }
+
+            const result = await updateUserConfig(configUpdates);
+            
+            // 成功時にエージェント設定も再読み込み
+            await Promise.all([
+                fetchAgentConfig(),
+                checkServerHealth()
+            ]);
+            
+            dispatch({ type: 'SET_AI_CONFIG_STATUS', payload: 'ready' });
+            console.log('✅ Config update completed successfully');
+            
+            return result;
+        } catch (error) {
+            console.error('❌ Config update failed:', error);
+            dispatch({ type: 'SET_AI_CONFIG_STATUS', payload: 'error' });
+            throw error;
+        }
+    }, [updateUserConfig, fetchAgentConfig, checkServerHealth, validateConfig]);
+
+    const handleConfigReset = useCallback(async () => {
+        try {
+            console.log('🔄 Resetting user config from App (ENHANCED)');
+            dispatch({ type: 'SET_AI_CONFIG_STATUS', payload: 'loading' });
+            
+            const result = await resetUserConfig();
+            
+            // 成功時にエージェント設定も再読み込み
+            await Promise.all([
+                fetchAgentConfig(),
+                checkServerHealth()
+            ]);
+            
+            dispatch({ type: 'SET_AI_CONFIG_STATUS', payload: 'ready' });
+            console.log('✅ Config reset completed successfully');
+            
+            return result;
+        } catch (error) {
+            console.error('❌ Config reset failed:', error);
+            dispatch({ type: 'SET_AI_CONFIG_STATUS', payload: 'error' });
+            throw error;
+        }
+    }, [resetUserConfig, fetchAgentConfig, checkServerHealth]);
+
+    // ユーザー固有のAPIリクエスト関数（新機能）
+    const makeUserConfiguredAPIRequest = useCallback(async (endpoint, options = {}) => {
+        if (!user) {
+            throw new Error('ユーザー認証が必要です');
+        }
+
+        // ユーザー設定が読み込まれるまで待機
+        if (!state.configInitialized && configLoading) {
+            console.log('⏳ Waiting for user config to load...');
+            return new Promise((resolve, reject) => {
+                const checkInterval = setInterval(() => {
+                    if (state.configInitialized || !configLoading) {
+                        clearInterval(checkInterval);
+                        resolve(authenticatedFetch(endpoint, options));
+                    }
+                }, 100);
+                
+                // 5秒でタイムアウト
+                setTimeout(() => {
+                    clearInterval(checkInterval);
+                    reject(new Error('ユーザー設定の読み込みがタイムアウトしました'));
+                }, 5000);
+            });
+        }
+
+        return authenticatedFetch(endpoint, options);
+    }, [user, state.configInitialized, configLoading, authenticatedFetch]);
+
+    // Initialize app - ユーザー設定対応強化版
     const initializeApp = useCallback(async () => {
         try {
+            console.log('🚀 Initializing app with enhanced user config support...');
+            
+            // サーバーの基本チェック
             await checkServerHealth();
-            await fetchTools();
-            await fetchAgentConfig();
-
             dispatch({ type: 'SET_SERVER_STATUS', payload: 'connected' });
+            
+            // ツールの読み込み
+            await fetchTools();
+            
+            // ユーザー設定の読み込み（認証後）
+            if (user) {
+                console.log('👤 Loading user-specific config...');
+                dispatch({ type: 'SET_AI_CONFIG_STATUS', payload: 'loading' });
+                
+                try {
+                    await loadUserConfig();
+                    // エージェント設定の読み込み（ユーザー設定を含む）
+                    await fetchAgentConfig();
+                    dispatch({ type: 'SET_AI_CONFIG_STATUS', payload: 'ready' });
+                } catch (configError) {
+                    console.error('❌ Failed to load user config:', configError);
+                    dispatch({ type: 'SET_AI_CONFIG_STATUS', payload: 'error' });
+                    // 設定読み込みに失敗してもアプリは継続
+                }
+            } else {
+                console.log('🔄 User not authenticated, using default config...');
+                await fetchAgentConfig();
+            }
+
             dispatch({ type: 'INITIALIZE_PAGES' });
             dispatch({ type: 'SET_INITIALIZED', payload: true });
 
+            console.log('✅ App initialization completed with user config support');
+
         } catch (error) {
-            console.error('アプリ初期化エラー:', error);
+            console.error('❌ アプリ初期化エラー:', error);
             dispatch({ type: 'SET_SERVER_STATUS', payload: 'error' });
+            dispatch({ type: 'SET_AI_CONFIG_STATUS', payload: 'error' });
             dispatch({ type: 'INITIALIZE_PAGES' });
             dispatch({ type: 'SET_INITIALIZED', payload: true });
         }
-    }, [checkServerHealth, fetchTools, fetchAgentConfig]);
+    }, [checkServerHealth, fetchTools, fetchAgentConfig, loadUserConfig, user]);
 
-    // Memoized values
+    // ユーザー変更時の設定リロード
+    useEffect(() => {
+        if (user && state.isInitialized) {
+            console.log('👤 User changed, reloading config...');
+            loadUserConfig().catch(error => {
+                console.error('Failed to reload user config:', error);
+            });
+        }
+    }, [user?.id, state.isInitialized, loadUserConfig]);
+
+    // Memoized values（ユーザー設定対応強化版）
     const currentPage = useMemo(() => {
         const page = (state.pages || []).find(p => p.id === state.currentPageId);
 
-        // 以前のcurrentPageと比較して、重要な変更がない場合は同じ参照を返す
         if (page && currentPageRef.current?.id === page.id) {
             const prev = currentPageRef.current;
 
-            // メッセージ、ローディング状態、基本設定の変更のみで再作成
             if (prev.name === page.name &&
                 prev.messages?.length === page.messages?.length &&
                 prev.isLoading === page.isLoading &&
                 JSON.stringify(prev.settings) === JSON.stringify(page.settings)) {
 
-                // selectedToolsの参照は維持しつつ、他の重要な変更のみ適用
                 const updatedPage = {
                     ...prev,
-                    messages: page.messages, // メッセージは最新の参照を使用
+                    messages: page.messages,
                     isLoading: page.isLoading,
-                    selectedTools: page.selectedTools // 新しい参照で更新（ツール選択用）
+                    selectedTools: page.selectedTools
                 };
 
                 currentPageRef.current = updatedPage;
@@ -395,12 +632,11 @@ export const AppProvider = ({ children }) => {
             }
         }
 
-        // 新しいページまたは重要な変更がある場合のみ新しい参照を作成
         currentPageRef.current = page;
         return page;
     }, [state.pages, state.currentPageId]);
 
-    // Stable callback references
+    // Stable callback references（ユーザー設定対応強化版）
     const stableCallbacks = useMemo(() => ({
         dispatch,
         initializeApp,
@@ -415,7 +651,17 @@ export const AppProvider = ({ children }) => {
         fetchTools,
         fetchAgentConfig,
         generateRandomAnimalName,
-        getAnimalEmoji
+        getAnimalEmoji,
+        // ユーザー設定関連の関数
+        handleConfigUpdate,
+        handleConfigReset,
+        refreshConfigs,
+        makeUserConfiguredAPIRequest, // 新機能
+        // ユーザー設定フックの機能を直接公開
+        loadUserConfig,
+        updateUserConfig,
+        resetUserConfig,
+        validateConfig
     }), [
         initializeApp,
         createNewPage,
@@ -427,11 +673,19 @@ export const AppProvider = ({ children }) => {
         updateMessage,
         checkServerHealth,
         fetchTools,
-        fetchAgentConfig
+        fetchAgentConfig,
+        handleConfigUpdate,
+        handleConfigReset,
+        refreshConfigs,
+        makeUserConfiguredAPIRequest,
+        loadUserConfig,
+        updateUserConfig,
+        resetUserConfig,
+        validateConfig
     ]);
 
     const contextValue = useMemo(() => ({
-        // State（showSettingsを削除）
+        // State
         pages: state.pages,
         currentPageId: state.currentPageId,
         tools: state.tools,
@@ -441,6 +695,23 @@ export const AppProvider = ({ children }) => {
         editingPageName: state.editingPageName,
         isInitialized: state.isInitialized,
         currentPage,
+
+        // ユーザー設定関連のStateを強化
+        userConfigEnabled: state.userConfigEnabled,
+        effectiveConfig: state.effectiveConfig,
+        configInitialized: state.configInitialized,
+        aiConfigStatus: state.aiConfigStatus,
+        lastConfigUpdate: state.lastConfigUpdate,
+        
+        // ユーザー設定フックの情報
+        userConfig,
+        configInfo,
+        configLoading,
+        hasCustomConfig,
+
+        // 認証情報
+        user,
+        authenticatedFetch,
 
         // Stable callbacks
         ...stableCallbacks,
@@ -456,7 +727,18 @@ export const AppProvider = ({ children }) => {
         state.agentConfig,
         state.editingPageName,
         state.isInitialized,
+        state.userConfigEnabled,
+        state.effectiveConfig,
+        state.configInitialized,
+        state.aiConfigStatus,
+        state.lastConfigUpdate,
         currentPage,
+        userConfig,
+        configInfo,
+        configLoading,
+        hasCustomConfig,
+        user,
+        authenticatedFetch,
         stableCallbacks
     ]);
 

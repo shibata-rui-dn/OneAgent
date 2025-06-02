@@ -150,3 +150,10 @@ tmp/
 
 # python virtual environments
 **/venv/
+
+# user-data
+/user_files
+/myMemo
+/data
+/secure_user_files
+/demo/FastEX/expense_reports.json

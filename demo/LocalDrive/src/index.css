@@ -1,0 +1,20 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer utilities {
+  .bg-primary-50 { background-color: #eff6ff; }
+  .bg-primary-100 { background-color: #dbeafe; }
+  .bg-primary-500 { background-color: #3b82f6; }
+  .bg-primary-600 { background-color: #2563eb; }
+  
+  .text-primary-600 { color: #2563eb; }
+  .text-primary-900 { color: #1e3a8a; }
+  
+  .border-primary-300 { border-color: #93c5fd; }
+  .border-primary-500 { border-color: #3b82f6; }
+  
+  .focus\:ring-primary-500:focus { 
+    --tw-ring-color: #3b82f6; 
+  }
+}

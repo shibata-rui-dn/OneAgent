@@ -43,13 +43,15 @@ export const BasicDataProvider = ({ children }) => {
             basicDataRef.current.pages?.length !== mainContext.pages?.length ||
             basicDataRef.current.currentPageId !== mainContext.currentPageId ||
             basicDataRef.current.editingPageName !== mainContext.editingPageName ||
-            basicDataRef.current.isInitialized !== mainContext.isInitialized;
+            basicDataRef.current.isInitialized !== mainContext.isInitialized ||
+            basicDataRef.current.user?.id !== mainContext.user?.id; // ユーザー情報の変更を監視
 
         if (shouldUpdate) {
             console.log('BasicDataProvider updating:', {
                 reason: !basicDataRef.current ? 'initial' : 'basic change detected',
                 currentPageId: mainContext.currentPageId,
-                toolsLength: mainContext.tools?.length
+                toolsLength: mainContext.tools?.length,
+                userId: mainContext.user?.id
             });
 
             basicDataRef.current = {
@@ -67,6 +69,10 @@ export const BasicDataProvider = ({ children }) => {
                 agentConfig: mainContext.agentConfig,
                 editingPageName: mainContext.editingPageName,
                 isInitialized: mainContext.isInitialized,
+
+                // ユーザー情報を追加
+                user: mainContext.user,
+                authenticatedFetch: mainContext.authenticatedFetch,
 
                 // Actions
                 dispatch: mainContext.dispatch,
@@ -95,6 +101,7 @@ export const BasicDataProvider = ({ children }) => {
         mainContext.currentPageId,
         mainContext.editingPageName,
         mainContext.isInitialized,
+        mainContext.user?.id, // ユーザーIDの変更を監視
         // 関数の安定性を確保
         mainContext.fetchAgentConfig,
         mainContext.checkServerHealth
@@ -291,7 +298,10 @@ export const useIconBarIsolated = () => {
         createNewPage: basicData.createNewPage,
         deletePage: basicData.deletePage,
         getAnimalEmoji: basicData.getAnimalEmoji,
-        dispatch: basicData.dispatch
+        dispatch: basicData.dispatch,
+        // ユーザー情報を追加
+        user: basicData.user,
+        authenticatedFetch: basicData.authenticatedFetch
         // setShowSettingsを除外してIconBarを安定化
     }), [
         basicData.pages,
@@ -299,7 +309,9 @@ export const useIconBarIsolated = () => {
         basicData.createNewPage,
         basicData.deletePage,
         basicData.getAnimalEmoji,
-        basicData.dispatch
+        basicData.dispatch,
+        basicData.user,
+        basicData.authenticatedFetch
     ]);
 };
 
@@ -427,24 +439,30 @@ export const useChatHeaderIsolated = () => {
     ]);
 };
 
-// ChatArea本体用フック（最適化版 - ツール選択を監視しない）
+// ChatArea本体用フック
 export const useChatAreaIsolated = () => {
     const messageData = useMessageData();
     const basicData = useBasicData();
-    // toolSelection を削除 - ChatAreaはツール選択の変更を監視しない
+    const toolSelection = useToolSelection();
+    
+    // AppContextからユーザー設定関連の情報を取得
+    const mainContext = useApp();
 
     return useMemo(() => {
         const currentPage = messageData.currentPage;
         const hasMessages = currentPage?.messages?.length > 0;
 
-        console.log('useChatAreaIsolated called (TOOL-INDEPENDENT):', {
+        console.log('useChatAreaIsolated called (USER-CONFIG):', {
             pageId: currentPage?.id,
             hasMessages,
             messageCount: currentPage?.messages?.length,
+            selectedToolsSize: hasMessages ? 'N/A' : toolSelection.selectedToolsSize,
+            hasUserConfig: mainContext.effectiveConfig?._meta?.hasUserOverrides,
+            provider: mainContext.effectiveConfig?.provider,
             timestamp: Date.now()
         });
 
-        return {
+        const result = {
             currentPage: messageData.currentPage,
             serverStatus: basicData.serverStatus,
             agentConfig: basicData.agentConfig,
@@ -452,9 +470,21 @@ export const useChatAreaIsolated = () => {
             addMessage: messageData.addMessage,
             updateMessage: messageData.updateMessage,
             API_BASE_URL: basicData.API_BASE_URL,
-            hasMessages
-            // selectedToolsSize を削除 - ChatAreaは表示しない
+            hasMessages,
+            
+            // ユーザー設定関連を追加
+            effectiveConfig: mainContext.effectiveConfig,
+            userConfigEnabled: mainContext.userConfigEnabled,
+            configInitialized: mainContext.configInitialized,
+            makeUserConfiguredAPIRequest: mainContext.makeUserConfiguredAPIRequest
         };
+
+        // 初期画面（メッセージなし）の場合のみツール選択情報を含める
+        if (!hasMessages) {
+            result.selectedToolsSize = toolSelection.selectedToolsSize || 0;
+        }
+
+        return result;
     }, [
         messageData.currentPage?.id,
         messageData.currentPage?.messages?.length,
@@ -465,8 +495,14 @@ export const useChatAreaIsolated = () => {
         basicData.updatePageLoading,
         messageData.addMessage,
         messageData.updateMessage,
-        basicData.API_BASE_URL
-        // toolSelection 関連の依存関係をすべて削除
+        basicData.API_BASE_URL,
+        // ユーザー設定関連の依存関係を追加
+        mainContext.effectiveConfig,
+        mainContext.userConfigEnabled,
+        mainContext.configInitialized,
+        mainContext.makeUserConfiguredAPIRequest,
+        // 初期画面でのみツール選択サイズを依存関係に含める
+        messageData.currentPage?.messages?.length === 0 ? toolSelection.selectedToolsSize : null
     ]);
 };
 

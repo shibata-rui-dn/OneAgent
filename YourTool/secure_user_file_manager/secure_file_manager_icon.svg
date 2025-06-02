@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- 拡張セキュアファイル管理アイコン -->
+  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" 
+        fill="#86EFAC" stroke="#22C55E" stroke-width="2"/>
+  <polyline points="14,2 14,8 20,8" fill="#22C55E"/>
+  
+  <!-- セキュリティシールド -->
+  <path d="M12 10l-2 2 2 2 4-4z" fill="#15803D" stroke="#15803D" stroke-width="1"/>
+  <circle cx="12" cy="13" r="3" fill="none" stroke="#15803D" stroke-width="1.5"/>
+  
+  <!-- 新機能アイコン -->
+  <!-- 最近の更新（時計） -->
+  <circle cx="7" cy="6" r="1.5" fill="none" stroke="#22C55E" stroke-width="0.8"/>
+  <path d="M7 5.5v1l0.5 0.5" stroke="#22C55E" stroke-width="0.6"/>
+  
+  <!-- お気に入り（星） -->
+  <path d="M10 4.5l0.5 1 1 0.2-0.7 0.7 0.2 1-0.9-0.5-0.9 0.5 0.2-1-0.7-0.7 1-0.2z" 
+        fill="#FCD34D" stroke="#F59E0B" stroke-width="0.3"/>
+  
+  <!-- ゴミ箱 -->
+  <rect x="15.5" y="17" width="2" height="2.5" fill="none" stroke="#EF4444" stroke-width="0.8"/>
+  <path d="M15.5 17h2M16 16.5v-0.5M17 16.5v-0.5" stroke="#EF4444" stroke-width="0.6"/>
+  
+  <!-- メインエリア表示 -->
+  <rect x="6" y="18" width="8" height="1" fill="#86EFAC"/>
+  <rect x="6" y="18" width="5" height="1" fill="#22C55E"/>
+  <text x="6.5" y="19.8" font-size="2" fill="#15803D">main</text>
+</svg>
