@@ -19,15 +19,6 @@ const ChatHeader = memo(() => {
         dispatch
     } = useChatHeaderIsolated();
 
-    // デバッグ用ログ
-    console.log('ChatHeader rendering (USER-CONFIG-AWARE)', {
-        pageId: currentPageId,
-        selectedToolsSize,
-        configProvider: agentConfig?.provider,
-        hasUserConfig: agentConfig?.userConfig?.hasCustomSettings,
-        timestamp: Date.now()
-    });
-
     if (!currentPageId || !currentPageName) return null;
 
     return (
@@ -116,18 +107,6 @@ const ChatArea = memo(() => {
 
     const { authenticatedFetch } = useAuth();
 
-    // デバッグ用ログ（ユーザー設定対応）
-    console.log('ChatArea rendering (USER-CONFIG-ENHANCED)', {
-        pageId: currentPage?.id,
-        messageCount: currentPage?.messages?.length,
-        isLoading: currentPage?.isLoading,
-        hasMessages,
-        selectedToolsSize: hasMessages ? 'N/A' : selectedToolsSize,
-        configProvider: effectiveConfig?.provider,
-        hasCustomConfig: effectiveConfig?._meta?.hasUserOverrides,
-        timestamp: Date.now()
-    });
-
     const abortControllerRef = useRef(null);
 
     const handleSendMessage = useCallback(async (message) => {
@@ -170,11 +149,19 @@ const ChatArea = memo(() => {
         abortControllerRef.current = new AbortController();
 
         try {
-            console.log('🚀 Streaming request starting with user config...');
+            console.log('🚀 Streaming request starting with conversation history...');
+
+            // ✅ 修正: 会話履歴の準備（新しいメッセージは含めない）
+            const conversationHistory = page.messages.map(msg => ({
+                role: msg.role,
+                content: msg.content
+                // timestampは除外
+            }));
 
             // ユーザー設定を考慮したAPIリクエスト
             const requestBody = {
-                query,
+                query, // 新しいメッセージはqueryパラメータのみで送信
+                messages: conversationHistory, // 過去のメッセージのみを履歴として送信
                 streaming: true,
                 tools: Array.from(page.selectedTools),
                 ...page.settings
@@ -188,7 +175,9 @@ const ChatArea = memo(() => {
                 console.log('📋 User config applied to request:', {
                     provider: effectiveConfig.provider,
                     model: effectiveConfig.model,
-                    hasCustomSettings: effectiveConfig._meta?.hasUserOverrides
+                    hasCustomSettings: effectiveConfig._meta?.hasUserOverrides,
+                    conversationHistoryCount: conversationHistory.length, // ✅ 修正
+                    newQuery: query.substring(0, 50) + (query.length > 50 ? '...' : '')
                 });
             }
 
@@ -204,11 +193,6 @@ const ChatArea = memo(() => {
                 signal: abortControllerRef.current.signal
             });
 
-            console.log('📥 Streaming response received (USER-CONFIG):', {
-                status: response.status,
-                ok: response.ok,
-                headers: Object.fromEntries(response.headers.entries())
-            });
 
             if (!response.ok) {
                 const errorText = await response.text();
@@ -224,7 +208,8 @@ const ChatArea = memo(() => {
                 streaming: true,
                 toolCalls: [],
                 reasoningSteps: [],
-                userConfigApplied: !!effectiveConfig?._meta?.hasUserOverrides
+                userConfigApplied: !!effectiveConfig?._meta?.hasUserOverrides,
+                conversationHistoryCount: conversationHistory.length // ✅ 追加
             };
 
             addMessage(page.id, assistantMessage);
@@ -237,7 +222,7 @@ const ChatArea = memo(() => {
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
 
-            console.log('📖 Starting to read streaming data with user config...');
+            console.log('📖 Starting to read streaming data with conversation history...');
 
             try {
                 let buffer = '';
@@ -248,13 +233,13 @@ const ChatArea = memo(() => {
                     const { done, value } = await reader.read();
 
                     if (done) {
-                        console.log(`✅ Streaming completed. Processed ${chunkCount} chunks with user config.`);
+                        //console.log(`✅ Streaming completed. Processed ${chunkCount} chunks with conversation history (${conversationHistory.length} past messages).`);
                         break;
                     }
 
                     chunkCount++;
                     if (chunkCount % 10 === 0) {
-                        console.log(`📦 Processed ${chunkCount} streaming chunks (user config applied)`);
+                        //console.log(`📦 Processed ${chunkCount} streaming chunks (conversation history: ${conversationHistory.length})`);
                     }
 
                     buffer += decoder.decode(value, { stream: true });
@@ -275,7 +260,7 @@ const ChatArea = memo(() => {
                                         console.log(`📊 Config info in chunk:`, chunk.configInfo);
                                     }
 
-                                    console.log(`📦 Chunk ${chunkCount}:`, chunk.type || 'unknown', chunk.content?.substring(0, 50) || '');
+                                    //console.log(`📦 Chunk ${chunkCount}:`, chunk.type || 'unknown', chunk.content?.substring(0, 50) || '');
 
                                     updateStreamingMessage(assistantMessage.id, chunk, page.id);
                                 } catch (parseError) {
@@ -311,9 +296,10 @@ const ChatArea = memo(() => {
             }
 
         } catch (error) {
-            console.error('❌ Streaming error with user config:', {
+            console.error('❌ Streaming error with conversation history:', {
                 message: error.message,
                 name: error.name,
+                conversationHistoryCount: page.messages.length,
                 stack: error.stack
             });
 
@@ -421,6 +407,14 @@ const ChatArea = memo(() => {
                     }
                     break;
 
+                // ✅ 追加: 初期化情報を処理
+                case 'init':
+                    console.log('🚀 Streaming initialized:', chunk.content);
+                    if (chunk.configInfo) {
+                        updates.configInfo = chunk.configInfo;
+                    }
+                    break;
+
                 default:
                     console.log('🔍 Unknown chunk type:', chunk.type, chunk);
                     break;
@@ -436,8 +430,16 @@ const ChatArea = memo(() => {
     }, [updateMessage]);
 
     const handleNonStreamingResponse = useCallback(async (query, page) => {
+        // ✅ 修正: 会話履歴の準備（新しいメッセージは含めない）
+        const conversationHistory = page.messages.map(msg => ({
+            role: msg.role,
+            content: msg.content
+            // timestampは除外
+        }));
+
         const requestBody = {
-            query,
+            query, // 新しいメッセージはqueryパラメータのみで送信
+            messages: conversationHistory, // 過去のメッセージのみを履歴として送信
             streaming: false,
             tools: Array.from(page.selectedTools),
             ...page.settings
@@ -448,6 +450,12 @@ const ChatArea = memo(() => {
             requestBody.userConfigApplied = true;
             requestBody.effectiveProvider = effectiveConfig.provider;
             requestBody.effectiveModel = effectiveConfig.model;
+            console.log('📋 User config applied to non-streaming request:', {
+                provider: effectiveConfig.provider,
+                model: effectiveConfig.model,
+                conversationHistoryCount: conversationHistory.length, // ✅ 修正
+                newQuery: query.substring(0, 50) + (query.length > 50 ? '...' : '')
+            });
         }
 
         // makeUserConfiguredAPIRequest を使用（利用可能な場合）
@@ -475,7 +483,8 @@ const ChatArea = memo(() => {
             timestamp: new Date(),
             toolCalls: result.tool_calls || [],
             configInfo: result.configInfo, // ユーザー設定情報を追加
-            userConfigApplied: !!effectiveConfig?._meta?.hasUserOverrides
+            userConfigApplied: !!effectiveConfig?._meta?.hasUserOverrides,
+            conversationHistoryCount: conversationHistory.length // ✅ 追加
         };
 
         addMessage(page.id, assistantMessage);
