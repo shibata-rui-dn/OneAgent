@@ -181,20 +181,24 @@ export const MessageDataProvider = ({ children }) => {
     const messageValue = useMemo(() => {
         const currentPage = (mainContext.pages || []).find(p => p.id === mainContext.currentPageId);
 
-        // currentPageの参照安定性を向上させる
+        // currentPageの参照安定性を向上させる（selectedToolsの変更も含める）
         const shouldUpdateCurrentPage = !messageDataRef.current?.currentPage ||
             messageDataRef.current.currentPage.id !== currentPage?.id ||
             messageDataRef.current.currentPage.name !== currentPage?.name ||
             messageDataRef.current.currentPage.messages?.length !== currentPage?.messages?.length ||
             messageDataRef.current.currentPage.isLoading !== currentPage?.isLoading ||
             // settingsオブジェクトの内容変更をチェック
-            JSON.stringify(messageDataRef.current.currentPage.settings) !== JSON.stringify(currentPage?.settings);
+            JSON.stringify(messageDataRef.current.currentPage.settings) !== JSON.stringify(currentPage?.settings) ||
+            // ✅ selectedToolsの変更もチェック
+            messageDataRef.current.currentPage.selectedTools?.size !== currentPage?.selectedTools?.size ||
+            !setsAreEqual(messageDataRef.current.currentPage.selectedTools, currentPage?.selectedTools);
 
         if (shouldUpdateCurrentPage || !messageDataRef.current) {
             console.log('MessageDataProvider updating currentPage:', {
                 reason: !messageDataRef.current ? 'initial' : 'page content changed',
                 pageId: currentPage?.id,
-                messageCount: currentPage?.messages?.length
+                messageCount: currentPage?.messages?.length,
+                selectedToolsSize: currentPage?.selectedTools?.size
             });
 
             const optimizedCurrentPage = currentPage ? {
@@ -224,7 +228,11 @@ export const MessageDataProvider = ({ children }) => {
         mainContext.pages?.find(p => p.id === mainContext.currentPageId)?.name,
         mainContext.pages?.find(p => p.id === mainContext.currentPageId)?.messages?.length,
         mainContext.pages?.find(p => p.id === mainContext.currentPageId)?.isLoading,
-        // selectedToolsの変更は依存関係から除外
+        // ✅ selectedToolsの変更も監視対象に追加
+        mainContext.pages?.find(p => p.id === mainContext.currentPageId)?.selectedTools?.size,
+        // selectedToolsの中身の変更も検知するために配列化
+        mainContext.pages?.find(p => p.id === mainContext.currentPageId)?.selectedTools ? 
+            [...mainContext.pages.find(p => p.id === mainContext.currentPageId).selectedTools].sort().join(',') : '',
         mainContext.addMessage,
         mainContext.updateMessage,
         mainContext.checkServerHealth,
@@ -237,6 +245,17 @@ export const MessageDataProvider = ({ children }) => {
             {children}
         </MessageDataContext.Provider>
     );
+};
+
+const setsAreEqual = (set1, set2) => {
+    if (!set1 && !set2) return true;
+    if (!set1 || !set2) return false;
+    if (set1.size !== set2.size) return false;
+    
+    for (const item of set1) {
+        if (!set2.has(item)) return false;
+    }
+    return true;
 };
 
 // 結合Provider

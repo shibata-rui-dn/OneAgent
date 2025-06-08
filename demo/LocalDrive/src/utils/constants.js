@@ -256,7 +256,7 @@ export const SPECIAL_PATHS = {
 }
 
 // ★ ツール名（変更なし）
-export const TOOL_NAME = 'secure_user_file_manager'
+export const TOOL_NAME = 'LocalDrive'
 
 // API エンドポイント
 export const API_ENDPOINTS = {

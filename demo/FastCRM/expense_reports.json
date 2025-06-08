@@ -1,0 +1,66 @@
+{
+  "users": {
+    "demo": {
+      "id": "demo",
+      "username": "demo",
+      "reports": [
+        "report_1748830284343_in7dy4h77"
+      ]
+    },
+    "admin": {
+      "id": "admin",
+      "username": "admin",
+      "reports": [
+        "report_1748833909204_cpsg4s0jr",
+        "report_1748833957166_npvf6ujlc"
+      ]
+    }
+  },
+  "reports": {
+    "report_1748830284343_in7dy4h77": {
+      "id": "report_1748830284343_in7dy4h77",
+      "title": "大阪から東京駅への出張",
+      "date": "2023-06-02",
+      "category": "交通費",
+      "amount": 14000,
+      "description": "CT社の打ち合わせ",
+      "receipt": false,
+      "userId": "demo",
+      "createdBy": "demo",
+      "createdAt": "2025-06-02T02:11:24.343Z",
+      "updatedAt": null
+    },
+    "report_1748833909204_cpsg4s0jr": {
+      "id": "report_1748833909204_cpsg4s0jr",
+      "title": "大阪から東京駅へ出張",
+      "date": "2023-06-02",
+      "category": "交通費",
+      "amount": 17000,
+      "description": "CY社の打ち合わせ",
+      "receipt": false,
+      "userId": "admin",
+      "createdBy": "admin",
+      "createdAt": "2025-06-02T03:11:49.204Z",
+      "updatedAt": null
+    },
+    "report_1748833957166_npvf6ujlc": {
+      "id": "report_1748833957166_npvf6ujlc",
+      "title": "大阪から東京駅への出張",
+      "date": "2023-06-02",
+      "category": "交通費",
+      "amount": 17800,
+      "description": "GY社との打ち合わせ",
+      "receipt": true,
+      "userId": "admin",
+      "createdBy": "admin",
+      "createdAt": "2025-06-02T03:12:37.166Z",
+      "updatedAt": null
+    }
+  },
+  "lastUpdated": "2025-06-02T03:12:37.166Z",
+  "metadata": {
+    "totalUsers": 2,
+    "totalReports": 3,
+    "version": "1.0.0"
+  }
+}

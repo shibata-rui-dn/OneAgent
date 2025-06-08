@@ -53,7 +53,7 @@ const Sidebar = React.memo(() => {
     try {
       const success = await fileOperations.createFile(filename, currentPath, content);
       if (success) {
-        notifySuccess(`ファイル「${filename}」を作成しました`);
+        // コンパクトな通知（DashboardContextで処理済み）
         // 成功時は自動的に更新される（カスタムイベント）
       }
       return success;
@@ -64,7 +64,7 @@ const Sidebar = React.memo(() => {
     } finally {
       setIsCreating(false);
     }
-  }, [fileOperations, currentPath, notifySuccess, notifyError]);
+  }, [fileOperations, currentPath, notifyError]);
 
   // フォルダ作成ハンドラー（モーダル対応）
   const handleCreateFolder = useCallback(async (folderName) => {
@@ -83,7 +83,7 @@ const Sidebar = React.memo(() => {
     try {
       const success = await fileOperations.createFolder(folderName, currentPath);
       if (success) {
-        notifySuccess(`フォルダ「${folderName}」を作成しました`);
+        // コンパクトな通知（DashboardContextで処理済み）
         // 成功時は自動的に更新される（カスタムイベント）
       }
       return success;
@@ -94,7 +94,7 @@ const Sidebar = React.memo(() => {
     } finally {
       setIsCreating(false);
     }
-  }, [fileOperations, currentPath, notifySuccess, notifyError]);
+  }, [fileOperations, currentPath, notifyError]);
 
   // ファイル内容を読み取る関数
   const readFileContent = useCallback((file) => {
@@ -193,7 +193,7 @@ const Sidebar = React.memo(() => {
         }
       }
       
-      // 結果通知
+      // 結果通知（コンパクト）
       if (successCount > 0) {
         notifySuccess(`${successCount}個のファイルをアップロードしました`);
         // 成功時は自動的に更新される（カスタムイベント）
@@ -467,7 +467,7 @@ const FavoriteFileItem = React.memo(({ file, onClick }) => (
     <Star className="w-3 h-3 mr-2 text-yellow-500 flex-shrink-0" />
     <div className="flex-1 min-w-0 text-left">
       <div className="truncate font-medium text-xs">{file.name}</div>
-      {!file.exists && (
+      {file.exists === false && (
         <div className="text-xs text-red-500">削除済み</div>
       )}
     </div>

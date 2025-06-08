@@ -6,13 +6,6 @@ const MessageInput = memo(({ onSendMessage }) => {
   const { currentPage, serverStatus } = useMessageInputIsolated();
   const [inputMessage, setInputMessage] = useState('');
 
-  // デバッグ用ログ
-  console.log('MessageInput rendering (OPTIMIZED)', { 
-    pageId: currentPage?.id,
-    isLoading: currentPage?.isLoading,
-    timestamp: Date.now()
-  });
-
   const handleSubmit = useCallback(() => {
     if (!inputMessage.trim() || currentPage?.isLoading) return;
     

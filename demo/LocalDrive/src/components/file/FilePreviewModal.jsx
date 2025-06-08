@@ -18,18 +18,14 @@ import {
   Minimize2
 } from 'lucide-react';
 import { formatFileSize, formatDate } from '../../utils/formatUtils.js';
-import { 
-  isTextFile, 
-  isImageFile, 
-  isAudioFile, 
+import {
+  isTextFile,
+  isImageFile,
+  isAudioFile,
   isVideoFile,
-  getMimeType 
+  getMimeType
 } from '../../utils/fileUtils.js';
 
-/**
- * ファイルプレビュー・編集モーダルコンポーネント（v3.0.0対応・自動更新対応）
- * テキストファイルの表示・編集、バイナリファイルのプレビューに対応
- */
 const FilePreviewModal = ({
   file,
   isOpen,
@@ -40,7 +36,6 @@ const FilePreviewModal = ({
   readOnly = false,
   currentPath = ''
 }) => {
-  // ローカル状態
   const [content, setContent] = useState('');
   const [originalContent, setOriginalContent] = useState('');
   const [isEditing, setIsEditing] = useState(false);
@@ -49,7 +44,6 @@ const FilePreviewModal = ({
   const [error, setError] = useState('');
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
-  // ファイル情報の計算
   const fileInfo = useMemo(() => {
     if (!file) return null;
 
@@ -63,15 +57,12 @@ const FilePreviewModal = ({
     };
   }, [file, readOnly, currentPath]);
 
-  // コンテンツの変更を監視
   useEffect(() => {
     setHasUnsavedChanges(content !== originalContent && isEditing);
   }, [content, originalContent, isEditing]);
 
-  // モーダルが開かれた時の初期化
   useEffect(() => {
     if (isOpen && file) {
-      // ファイルにcontentが含まれている場合は設定
       if (file.content !== undefined) {
         setContent(file.content);
         setOriginalContent(file.content);
@@ -85,21 +76,18 @@ const FilePreviewModal = ({
     }
   }, [isOpen, file]);
 
-  // 外部からのコンテンツ設定
   const setFileContent = useCallback((fileContent) => {
     setContent(fileContent);
     setOriginalContent(fileContent);
     setError('');
   }, []);
 
-  // エラー設定
   const setFileError = useCallback((errorMessage) => {
     setError(errorMessage);
     setContent('');
     setOriginalContent('');
   }, []);
 
-  // 編集モード切り替え
   const handleToggleEdit = useCallback(() => {
     if (isEditing && hasUnsavedChanges) {
       if (!confirm('未保存の変更があります。編集を終了しますか？')) {
@@ -110,9 +98,6 @@ const FilePreviewModal = ({
     setIsEditing(!isEditing);
   }, [isEditing, hasUnsavedChanges, originalContent]);
 
-  /**
-   * ファイル保存ハンドラー（新規実装）
-   */
   const handleSave = useCallback(async () => {
     if (!hasUnsavedChanges || !onSave) return;
 
@@ -122,20 +107,18 @@ const FilePreviewModal = ({
       setOriginalContent(content);
       setIsEditing(false);
       setHasUnsavedChanges(false);
-      
-      // 保存成功後にカスタムイベントを発火して更新
+
       const event = new CustomEvent('fileOperationCompleted', {
-        detail: { 
-          operationType: 'save_file', 
-          data: { 
+        detail: {
+          operationType: 'save_file',
+          data: {
             fileName: file?.name,
-            timestamp: Date.now() 
+            timestamp: Date.now()
           }
         }
       });
       window.dispatchEvent(event);
-      console.log('🔄 File save event dispatched for:', file?.name);
-      
+
     } catch (error) {
       setError(`保存に失敗しました: ${error.message}`);
     } finally {
@@ -143,18 +126,15 @@ const FilePreviewModal = ({
     }
   }, [content, hasUnsavedChanges, onSave, file]);
 
-  // ダウンロード処理
   const handleDownload = useCallback(() => {
     if (onDownload) {
       onDownload(file, content);
     }
   }, [file, content, onDownload]);
 
-  // クリップボードにコピー
   const handleCopyToClipboard = useCallback(async () => {
     try {
       await navigator.clipboard.writeText(content);
-      // 成功フィードバック（簡易版）
       const button = document.querySelector('[data-copy-button]');
       if (button) {
         const originalText = button.innerHTML;
@@ -168,26 +148,21 @@ const FilePreviewModal = ({
     }
   }, [content]);
 
-  // フルスクリーン切り替え
   const handleToggleFullscreen = useCallback(() => {
     setIsFullscreen(!isFullscreen);
   }, [isFullscreen]);
 
-  // キーボードショートカット
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (!isOpen) return;
 
-      // Ctrl+S で保存
       if (e.ctrlKey && e.key === 's') {
         e.preventDefault();
         handleSave();
       }
-      // Esc でモーダルを閉じる（編集中でなければ）
       else if (e.key === 'Escape' && !isEditing) {
         onClose();
       }
-      // Ctrl+E で編集モード切り替え
       else if (e.ctrlKey && e.key === 'e') {
         e.preventDefault();
         if (fileInfo?.canEdit) {
@@ -200,7 +175,6 @@ const FilePreviewModal = ({
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, isEditing, handleSave, onClose, handleToggleEdit, fileInfo]);
 
-  // モーダルが閉じられる前の確認
   const handleClose = useCallback(() => {
     if (hasUnsavedChanges) {
       if (!confirm('未保存の変更があります。閉じますか？')) {
@@ -214,18 +188,15 @@ const FilePreviewModal = ({
 
   return (
     <>
-      {/* オーバーレイ */}
       <div className="fixed inset-0 bg-black bg-opacity-50 z-50" onClick={handleClose} />
 
-      {/* モーダル */}
       <div className={`
         fixed z-50 bg-white rounded-lg shadow-xl transition-all duration-300
-        ${isFullscreen 
-          ? 'inset-4' 
+        ${isFullscreen
+          ? 'inset-4'
           : 'top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-full max-w-4xl max-h-[90vh] mx-4'
         }
       `}>
-        {/* ヘッダー */}
         <div className="flex items-center justify-between p-4 border-b border-gray-200">
           <div className="flex items-center space-x-3">
             <FileIcon file={file} />
@@ -246,7 +217,6 @@ const FilePreviewModal = ({
           </div>
 
           <div className="flex items-center space-x-2">
-            {/* アクションボタン */}
             {fileInfo?.isText && content && (
               <button
                 onClick={handleCopyToClipboard}
@@ -262,11 +232,10 @@ const FilePreviewModal = ({
             {fileInfo?.canEdit && (
               <button
                 onClick={handleToggleEdit}
-                className={`inline-flex items-center px-3 py-1 text-sm rounded transition-colors duration-200 ${
-                  isEditing 
-                    ? 'text-blue-600 bg-blue-100 hover:bg-blue-200' 
+                className={`inline-flex items-center px-3 py-1 text-sm rounded transition-colors duration-200 ${isEditing
+                    ? 'text-blue-600 bg-blue-100 hover:bg-blue-200'
                     : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
-                }`}
+                  }`}
                 title={isEditing ? '編集を終了' : '編集モード'}
               >
                 {isEditing ? <Eye className="w-4 h-4 mr-1" /> : <Edit3 className="w-4 h-4 mr-1" />}
@@ -321,7 +290,6 @@ const FilePreviewModal = ({
           </div>
         </div>
 
-        {/* コンテンツエリア */}
         <div className="flex-1 overflow-hidden">
           {isLoading ? (
             <LoadingContent />
@@ -339,7 +307,6 @@ const FilePreviewModal = ({
           )}
         </div>
 
-        {/* フッター（編集モード時のみ） */}
         {isEditing && (
           <div className="border-t border-gray-200 p-4 bg-gray-50">
             <div className="flex items-center justify-between">
@@ -375,9 +342,6 @@ const FilePreviewModal = ({
   );
 };
 
-/**
- * ファイルアイコンコンポーネント
- */
 const FileIcon = ({ file }) => {
   if (isImageFile(file.name)) {
     return <Image className="w-6 h-6 text-green-600" />;
@@ -392,9 +356,6 @@ const FileIcon = ({ file }) => {
   }
 };
 
-/**
- * ローディングコンテンツ
- */
 const LoadingContent = () => (
   <div className="flex items-center justify-center h-64">
     <div className="text-center">
@@ -404,9 +365,6 @@ const LoadingContent = () => (
   </div>
 );
 
-/**
- * エラーコンテンツ
- */
 const ErrorContent = ({ error, onRetry }) => (
   <div className="flex items-center justify-center h-64">
     <div className="text-center">
@@ -422,35 +380,58 @@ const ErrorContent = ({ error, onRetry }) => (
   </div>
 );
 
-/**
- * ファイルコンテンツ表示コンポーネント
- */
-const FileContent = ({ 
-  file, 
-  content, 
-  isEditing, 
-  fileInfo, 
-  onChange, 
-  isFullscreen 
+const FileContent = ({
+  file,
+  content,
+  isEditing,
+  fileInfo,
+  onChange,
+  isFullscreen
 }) => {
   const containerHeight = isFullscreen ? 'calc(100vh - 200px)' : '60vh';
 
-  // デバッグ用ログ
-  console.log('FileContent render:', {
-    fileName: file?.name,
-    contentLength: content?.length,
-    contentType: typeof content,
-    fileInfo: fileInfo,
-    contentPreview: content?.substring(0, 50)
-  });
+  let displayContent = content;
 
-  // テキストファイルの場合
+  if (typeof content === 'string' && content.trim().startsWith('{')) {
+    try {
+      const parsedContent = JSON.parse(content);
+
+      if (parsedContent.success && parsedContent.data && parsedContent.data.file) {
+        displayContent = parsedContent.data.file.content || '';
+      } else if (parsedContent.data && parsedContent.data.file && parsedContent.data.file.content) {
+        displayContent = parsedContent.data.file.content;
+      }
+    } catch (parseError) {
+      // JSONパースに失敗した場合は元のcontentをそのまま使用
+    }
+  }
+
+  if (typeof displayContent === 'string' && displayContent.startsWith('base64:')) {
+    // Base64 コンテンツはそのまま使用
+  }
+
+  if (displayContent === undefined || displayContent === null) {
+    return (
+      <div className="p-4 flex items-center justify-center" style={{ height: containerHeight }}>
+        <div className="text-center">
+          <AlertCircle className="w-16 h-16 text-yellow-500 mx-auto mb-4" />
+          <p className="text-gray-600 mb-2">
+            ファイル内容を読み込めませんでした
+          </p>
+          <p className="text-sm text-gray-500">
+            コンテンツが空またはundefinedです
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   if (fileInfo?.isText) {
     return (
       <div className="p-4" style={{ height: containerHeight }}>
         {isEditing ? (
           <textarea
-            value={content || ''}
+            value={displayContent || ''}
             onChange={(e) => onChange(e.target.value)}
             className="w-full h-full p-4 border border-gray-300 rounded-lg font-mono text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             placeholder="ファイルの内容を入力してください..."
@@ -459,7 +440,7 @@ const FileContent = ({
         ) : (
           <div className="h-full overflow-auto">
             <pre className="whitespace-pre-wrap font-mono text-sm text-gray-900 bg-gray-50 p-4 rounded-lg">
-              {content || 'ファイルは空です'}
+              {displayContent || 'ファイルは空です'}
             </pre>
           </div>
         )}
@@ -467,12 +448,17 @@ const FileContent = ({
     );
   }
 
-  // 画像ファイルの場合
-  if (fileInfo?.isImage && content) {
-    const imageUrl = content.startsWith('data:') 
-      ? content 
-      : `data:${fileInfo.mimeType};base64,${content.replace(/^base64:/, '')}`;
-    
+  if (fileInfo?.isImage && displayContent) {
+    let imageUrl;
+    if (displayContent.startsWith('data:')) {
+      imageUrl = displayContent;
+    } else if (displayContent.startsWith('base64:')) {
+      const base64Data = displayContent.substring(7);
+      imageUrl = `data:${fileInfo.mimeType};base64,${base64Data}`;
+    } else {
+      imageUrl = `data:${fileInfo.mimeType};base64,${displayContent}`;
+    }
+
     return (
       <div className="p-4 flex items-center justify-center" style={{ height: containerHeight }}>
         <img
@@ -481,45 +467,71 @@ const FileContent = ({
           className="max-w-full max-h-full object-contain rounded-lg shadow-lg"
           onError={(e) => {
             e.target.style.display = 'none';
+            e.target.parentNode.innerHTML = `
+              <div class="text-center">
+                <div class="w-16 h-16 bg-gray-200 rounded-lg mx-auto mb-4 flex items-center justify-center">
+                  <svg class="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                  </svg>
+                </div>
+                <p class="text-gray-600">画像を表示できませんでした</p>
+              </div>
+            `;
           }}
         />
       </div>
     );
   }
 
-  // 音声ファイルの場合
-  if (fileInfo?.isAudio && content) {
-    const audioUrl = content.startsWith('data:') 
-      ? content 
-      : `data:${fileInfo.mimeType};base64,${content.replace(/^base64:/, '')}`;
-    
+  if (fileInfo?.isAudio && displayContent) {
+    let audioUrl;
+    if (displayContent.startsWith('data:')) {
+      audioUrl = displayContent;
+    } else if (displayContent.startsWith('base64:')) {
+      const base64Data = displayContent.substring(7);
+      audioUrl = `data:${fileInfo.mimeType};base64,${base64Data}`;
+    } else {
+      audioUrl = `data:${fileInfo.mimeType};base64,${displayContent}`;
+    }
+
     return (
       <div className="p-4 flex items-center justify-center" style={{ height: containerHeight }}>
-        <audio controls className="w-full max-w-md">
-          <source src={audioUrl} type={fileInfo.mimeType} />
-          お使いのブラウザは音声ファイルをサポートしていません。
-        </audio>
+        <div className="text-center">
+          <Music className="w-16 h-16 text-pink-600 mx-auto mb-4" />
+          <audio controls className="w-full max-w-md">
+            <source src={audioUrl} type={fileInfo.mimeType} />
+            お使いのブラウザは音声ファイルをサポートしていません。
+          </audio>
+          <p className="text-sm text-gray-500 mt-2">{file.name}</p>
+        </div>
       </div>
     );
   }
 
-  // 動画ファイルの場合
-  if (fileInfo?.isVideo && content) {
-    const videoUrl = content.startsWith('data:') 
-      ? content 
-      : `data:${fileInfo.mimeType};base64,${content.replace(/^base64:/, '')}`;
-    
+  if (fileInfo?.isVideo && displayContent) {
+    let videoUrl;
+    if (displayContent.startsWith('data:')) {
+      videoUrl = displayContent;
+    } else if (displayContent.startsWith('base64:')) {
+      const base64Data = displayContent.substring(7);
+      videoUrl = `data:${fileInfo.mimeType};base64,${base64Data}`;
+    } else {
+      videoUrl = `data:${fileInfo.mimeType};base64,${displayContent}`;
+    }
+
     return (
       <div className="p-4 flex items-center justify-center" style={{ height: containerHeight }}>
-        <video controls className="max-w-full max-h-full rounded-lg shadow-lg">
-          <source src={videoUrl} type={fileInfo.mimeType} />
-          お使いのブラウザは動画ファイルをサポートしていません。
-        </video>
+        <div className="text-center">
+          <video controls className="max-w-full max-h-full rounded-lg shadow-lg">
+            <source src={videoUrl} type={fileInfo.mimeType} />
+            お使いのブラウザは動画ファイルをサポートしていません。
+          </video>
+          <p className="text-sm text-gray-500 mt-2">{file.name}</p>
+        </div>
       </div>
     );
   }
 
-  // その他のファイル（バイナリファイル等）
   return (
     <div className="p-4 flex items-center justify-center" style={{ height: containerHeight }}>
       <div className="text-center">
@@ -530,10 +542,11 @@ const FileContent = ({
         <p className="text-sm text-gray-500">
           ファイルタイプ: {fileInfo?.mimeType}
         </p>
-        {content && (
-          <p className="text-xs text-gray-400 mt-2">
-            コンテンツサイズ: {content.length} 文字
-          </p>
+        {displayContent && (
+          <div className="mt-4 text-xs text-gray-400">
+            <p>コンテンツサイズ: {displayContent.length} 文字</p>
+            <p>データ型: {typeof displayContent}</p>
+          </div>
         )}
       </div>
     </div>

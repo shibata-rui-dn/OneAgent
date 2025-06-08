@@ -28,12 +28,14 @@ import { getFileExtension, isDirectory, isExecutableFile, isImageFile, isTextFil
 /**
  * ファイルアイテムコンポーネント（v3.0.0対応・完全実装）
  * 新機能：お気に入り表示、ゴミ箱メタデータ、最近の更新表示、名前変更、ドラッグ&ドロップ
+ * 改善：直接お気に入りボタンを追加
  */
 const FileItem = ({
   file,
   isSelected = false,
   isRenaming = false,
   isDragging = false,
+  isFavorite = false,
   viewMode = 'grid',
   currentPath = '',
   onClick,
@@ -41,6 +43,7 @@ const FileItem = ({
   onSelect,
   onContextMenu,
   onRename,
+  onToggleFavorite,
   onDragStart,
   onDragEnd,
   onDrop,
@@ -263,15 +266,6 @@ const FileItem = ({
   const getMetaInfo = () => {
     const info = []
     
-    // お気に入り表示
-    if (file.inFavorites) {
-      info.push({
-        icon: Star,
-        label: 'お気に入り',
-        color: 'text-yellow-500'
-      })
-    }
-    
     // 最近の更新でのアクション表示
     if (currentPath === 'recent' && file.action) {
       const actionLabels = {
@@ -368,6 +362,13 @@ const FileItem = ({
       onClick && onClick(file);
     }
   };
+
+  // お気に入りボタンのハンドラー
+  const handleFavoriteClick = (e) => {
+    if (onToggleFavorite) {
+      onToggleFavorite(e);
+    }
+  };
   
   // グリッド表示
   if (viewMode === 'grid') {
@@ -421,11 +422,31 @@ const FileItem = ({
             {isSelected && <Check className="w-3 h-3" />}
           </button>
         </div>
-        
+
+        {/* お気に入りボタン（ゴミ箱以外） */}
+        {currentPath !== 'trash' && (
+          <div className="absolute top-2 right-2 z-10">
+            <button
+              className={`
+                w-6 h-6 rounded-full flex items-center justify-center transition-all duration-200
+                ${isFavorite 
+                  ? 'bg-yellow-100 text-yellow-600 opacity-100' 
+                  : 'bg-white/80 text-gray-400 opacity-0 group-hover:opacity-100 hover:text-yellow-500 hover:bg-yellow-50'
+                }
+                backdrop-blur-sm border border-white/50 shadow-sm
+              `}
+              onClick={handleFavoriteClick}
+              title={isFavorite ? 'お気に入りから削除' : 'お気に入りに追加'}
+            >
+              <Star className={`w-4 h-4 ${isFavorite ? 'fill-current' : ''}`} />
+            </button>
+          </div>
+        )}
+
         {/* メニューボタン */}
-        <div className="absolute top-2 right-2 z-10">
+        <div className="absolute top-2 right-10 z-10">
           <button
-            className="w-6 h-6 rounded-full bg-white border border-gray-300 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+            className="w-6 h-6 rounded-full bg-white/80 backdrop-blur-sm border border-white/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200 shadow-sm"
             onClick={(e) => {
               e.stopPropagation()
               onContextMenu && onContextMenu(e, file)
@@ -477,12 +498,18 @@ const FileItem = ({
                 />
               </div>
             ) : (
-              <p 
-                className="text-sm font-medium text-gray-900 break-words px-1"
-                title={file.name}
-              >
-                {truncateText(file.name, 20)}
-              </p>
+              <div className="flex items-center justify-center space-x-1">
+                <p 
+                  className="text-sm font-medium text-gray-900 break-words px-1"
+                  title={file.name}
+                >
+                  {truncateText(file.name, 20)}
+                </p>
+                {/* お気に入りアイコン（既にお気に入りの場合のみ表示） */}
+                {isFavorite && (
+                  <Star className="w-4 h-4 text-yellow-500 fill-current flex-shrink-0" />
+                )}
+              </div>
             )}
             
             {/* ファイル情報 */}
@@ -600,6 +627,10 @@ const FileItem = ({
                   title={meta.label}
                 />
               ))}
+              {/* お気に入りアイコン（既にお気に入りの場合のみ表示） */}
+              {isFavorite && (
+                <Star className="w-4 h-4 ml-2 text-yellow-500 fill-current flex-shrink-0" />
+              )}
             </div>
             <div className="flex items-center space-x-4 text-xs text-gray-500">
               {!isDirectory(file.name) && (
@@ -624,6 +655,21 @@ const FileItem = ({
           </div>
         )}
       </div>
+
+      {/* お気に入りボタン（リスト表示・ゴミ箱以外） */}
+      {currentPath !== 'trash' && (
+        <button
+          onClick={handleFavoriteClick}
+          className={`inline-flex items-center justify-center w-8 h-8 rounded-full transition-all duration-200 mr-2 ${
+            isFavorite 
+              ? 'text-yellow-500 hover:text-yellow-600 hover:bg-yellow-50' 
+              : 'text-gray-300 hover:text-yellow-500 hover:bg-yellow-50'
+          }`}
+          title={isFavorite ? 'お気に入りから削除' : 'お気に入りに追加'}
+        >
+          <Star className={`w-5 h-5 ${isFavorite ? 'fill-current' : ''}`} />
+        </button>
+      )}
       
       {/* メニューボタン */}
       <button

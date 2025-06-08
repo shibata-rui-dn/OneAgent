@@ -1,7 +1,7 @@
 {
-  "name": "secure_user_file_manager",
-  "description": "OAuth認証を使用したセキュアなユーザーファイル管理システム。ファイル管理、最近の更新、お気に入り、ゴミ箱機能を提供。",
-  "version": "3.1.0",
+  "name": "LocalDrive",
+  "description": "ストレージサービス。ファイル管理、最近の更新、お気に入り、ゴミ箱機能を提供。JSON形式レスポンス対応。",
+  "version": "4.0.0",
   "inputSchema": {
     "type": "object",
     "properties": {

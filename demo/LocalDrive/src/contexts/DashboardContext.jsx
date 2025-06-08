@@ -1,6 +1,5 @@
 import React, { createContext, useContext, useReducer, useCallback, useMemo } from 'react';
 
-// 簡単なパス結合ユーティリティ（v3.0.0対応）
 const joinPaths = (...paths) => {
   return paths
     .filter(Boolean)
@@ -9,18 +8,9 @@ const joinPaths = (...paths) => {
     .replace(/^\/+|\/+$/g, '');
 };
 
-// documentsパスを正規化
-const normalizeDocumentsPath = (path) => {
-  if (!path) return '';
-  if (path.startsWith('documents/')) return path;
-  return path ? `documents/${path}` : 'documents';
-};
-
-// ダッシュボード状態のContext
 const DashboardStateContext = createContext(null);
 const DashboardActionContext = createContext(null);
 
-// アクションタイプ（v3.0.0拡張）
 export const DASHBOARD_ACTIONS = {
   SET_LOADING: 'SET_LOADING',
   SET_INITIALIZED: 'SET_INITIALIZED',
@@ -31,49 +21,38 @@ export const DASHBOARD_ACTIONS = {
   SET_FILES_LOADING: 'SET_FILES_LOADING',
   SET_FOLDER_TREE: 'SET_FOLDER_TREE',
   SET_QUOTA_INFO: 'SET_QUOTA_INFO',
-  
-  // v3.0.0 新機能
   SET_RECENT_FILES: 'SET_RECENT_FILES',
   SET_FAVORITES: 'SET_FAVORITES',
   SET_TRASH_ITEMS: 'SET_TRASH_ITEMS',
   ADD_TO_FAVORITES: 'ADD_TO_FAVORITES',
   REMOVE_FROM_FAVORITES: 'REMOVE_FROM_FAVORITES',
-  
   ADD_OPERATION: 'ADD_OPERATION',
   UPDATE_OPERATION: 'UPDATE_OPERATION',
   REMOVE_OPERATION: 'REMOVE_OPERATION',
   TOGGLE_SIDEBAR: 'TOGGLE_SIDEBAR',
   SET_VIEW_MODE: 'SET_VIEW_MODE',
-  BATCH_UPDATE: 'BATCH_UPDATE' 
+  BATCH_UPDATE: 'BATCH_UPDATE',
+  UPDATE_FILE_FAVORITE_STATUS: 'UPDATE_FILE_FAVORITE_STATUS'
 };
 
-// 初期状態（v3.0.0拡張）
 const initialState = {
-  // UI状態
   sidebarCollapsed: false,
   viewMode: 'list',
   isLoading: true,
   isInitialized: false,
-  
-  // ファイル関連状態
-  currentPath: 'documents', // デフォルトをdocumentsに
+  currentPath: 'documents',
   files: [],
   selectedFiles: [],
   searchQuery: '',
   isLoadingFiles: false,
-  
-  // システム状態
   folderTree: [],
   quotaInfo: null,
   operations: [],
-  
-  // v3.0.0 新機能
   recentFiles: [],
   favorites: [],
   trashItems: []
 };
 
-// Reducer関数（v3.0.0対応）
 const dashboardReducer = (state, action) => {
   switch (action.type) {
     case DASHBOARD_ACTIONS.SET_LOADING:
@@ -86,7 +65,7 @@ const dashboardReducer = (state, action) => {
       return { 
         ...state, 
         currentPath: action.payload,
-        selectedFiles: [] // パス変更時は選択解除
+        selectedFiles: []
       };
       
     case DASHBOARD_ACTIONS.SET_FILES:
@@ -107,7 +86,6 @@ const dashboardReducer = (state, action) => {
     case DASHBOARD_ACTIONS.SET_QUOTA_INFO:
       return { ...state, quotaInfo: action.payload };
       
-    // v3.0.0 新機能
     case DASHBOARD_ACTIONS.SET_RECENT_FILES:
       return { ...state, recentFiles: action.payload };
       
@@ -118,15 +96,50 @@ const dashboardReducer = (state, action) => {
       return { ...state, trashItems: action.payload };
       
     case DASHBOARD_ACTIONS.ADD_TO_FAVORITES:
+      const fileToAdd = {
+        ...action.payload,
+        exists: action.payload.exists !== false, // undefinedの場合はtrueに設定
+        inFavorites: true
+      };
       return { 
         ...state, 
-        favorites: [...state.favorites, action.payload]
+        favorites: [...state.favorites, fileToAdd]
       };
       
     case DASHBOARD_ACTIONS.REMOVE_FROM_FAVORITES:
       return { 
         ...state, 
         favorites: state.favorites.filter(fav => fav.path !== action.payload.path)
+      };
+      
+    case DASHBOARD_ACTIONS.UPDATE_FILE_FAVORITE_STATUS:
+      const { filepath, isFavorite } = action.payload;
+      
+      const updatedFiles = state.files.map(file => {
+        if ((file.path || file.name) === filepath) {
+          return { ...file, inFavorites: isFavorite };
+        }
+        return file;
+      });
+      
+      let updatedFavorites = state.favorites;
+      if (isFavorite) {
+        const existingFile = state.files.find(f => (f.path || f.name) === filepath);
+        if (existingFile && !state.favorites.some(fav => fav.path === filepath)) {
+          updatedFavorites = [...state.favorites, { 
+            ...existingFile, 
+            inFavorites: true, 
+            exists: true // 明示的にexistsをtrueに設定
+          }];
+        }
+      } else {
+        updatedFavorites = state.favorites.filter(fav => (fav.path || fav.name) !== filepath);
+      }
+      
+      return {
+        ...state,
+        files: updatedFiles,
+        favorites: updatedFavorites
       };
       
     case DASHBOARD_ACTIONS.ADD_OPERATION:
@@ -165,13 +178,9 @@ const dashboardReducer = (state, action) => {
   }
 };
 
-/**
- * ダッシュボードプロバイダー（v3.0.0対応・最適化版）
- */
 export const DashboardProvider = ({ children }) => {
   const [state, dispatch] = useReducer(dashboardReducer, initialState);
   
-  // アクション関数群を個別にuseCallbackでメモ化（最適化版）
   const setLoading = useCallback((loading) => {
     dispatch({ type: DASHBOARD_ACTIONS.SET_LOADING, payload: loading });
   }, []);
@@ -208,13 +217,17 @@ export const DashboardProvider = ({ children }) => {
     dispatch({ type: DASHBOARD_ACTIONS.SET_QUOTA_INFO, payload: info });
   }, []);
 
-  // v3.0.0 新機能のアクション
   const setRecentFiles = useCallback((files) => {
     dispatch({ type: DASHBOARD_ACTIONS.SET_RECENT_FILES, payload: files });
   }, []);
 
   const setFavorites = useCallback((favorites) => {
-    dispatch({ type: DASHBOARD_ACTIONS.SET_FAVORITES, payload: favorites });
+    // お気に入りファイルにexistsプロパティを確実に設定
+    const favoritesWithExists = favorites.map(fav => ({
+      ...fav,
+      exists: fav.exists !== false // undefinedの場合はtrueに設定
+    }));
+    dispatch({ type: DASHBOARD_ACTIONS.SET_FAVORITES, payload: favoritesWithExists });
   }, []);
 
   const setTrashItems = useCallback((items) => {
@@ -222,11 +235,23 @@ export const DashboardProvider = ({ children }) => {
   }, []);
 
   const addToFavorites = useCallback((file) => {
-    dispatch({ type: DASHBOARD_ACTIONS.ADD_TO_FAVORITES, payload: file });
+    const fileWithExists = {
+      ...file,
+      exists: file.exists !== false, // undefinedの場合はtrueに設定
+      inFavorites: true
+    };
+    dispatch({ type: DASHBOARD_ACTIONS.ADD_TO_FAVORITES, payload: fileWithExists });
   }, []);
 
   const removeFromFavorites = useCallback((file) => {
     dispatch({ type: DASHBOARD_ACTIONS.REMOVE_FROM_FAVORITES, payload: file });
+  }, []);
+
+  const updateFileFavoriteStatus = useCallback((filepath, isFavorite) => {
+    dispatch({ 
+      type: DASHBOARD_ACTIONS.UPDATE_FILE_FAVORITE_STATUS, 
+      payload: { filepath, isFavorite } 
+    });
   }, []);
 
   const addOperation = useCallback((operation) => {
@@ -253,7 +278,6 @@ export const DashboardProvider = ({ children }) => {
     dispatch({ type: DASHBOARD_ACTIONS.BATCH_UPDATE, payload: updates });
   }, []);
 
-  // アクションオブジェクトをuseMemoで安定化
   const actions = useMemo(() => ({
     setLoading,
     setInitialized,
@@ -269,6 +293,7 @@ export const DashboardProvider = ({ children }) => {
     setTrashItems,
     addToFavorites,
     removeFromFavorites,
+    updateFileFavoriteStatus,
     addOperation,
     updateOperation,
     removeOperation,
@@ -290,6 +315,7 @@ export const DashboardProvider = ({ children }) => {
     setTrashItems,
     addToFavorites,
     removeFromFavorites,
+    updateFileFavoriteStatus,
     addOperation,
     updateOperation,
     removeOperation,
@@ -307,9 +333,6 @@ export const DashboardProvider = ({ children }) => {
   );
 };
 
-/**
- * ダッシュボード状態を取得するフック
- */
 export const useDashboardState = () => {
   const context = useContext(DashboardStateContext);
   if (context === null) {
@@ -318,9 +341,6 @@ export const useDashboardState = () => {
   return context;
 };
 
-/**
- * ダッシュボードアクションを取得するフック
- */
 export const useDashboardActions = () => {
   const context = useContext(DashboardActionContext);
   if (context === null) {
@@ -329,17 +349,11 @@ export const useDashboardActions = () => {
   return context;
 };
 
-/**
- * ダッシュボード状態の特定の部分のみを取得するフック（セレクター）
- */
 export const useDashboardSelector = (selector) => {
   const state = useDashboardState();
   return useMemo(() => selector(state), [selector, state]);
 };
 
-/**
- * ファイル関連の状態のみを取得するフック（最適化版）
- */
 export const useFileState = () => {
   return useDashboardSelector(useCallback(state => ({
     files: state.files,
@@ -350,9 +364,6 @@ export const useFileState = () => {
   }), []));
 };
 
-/**
- * UI関連の状態のみを取得するフック（最適化版）
- */
 export const useUIState = () => {
   return useDashboardSelector(useCallback(state => ({
     sidebarCollapsed: state.sidebarCollapsed,
@@ -362,9 +373,6 @@ export const useUIState = () => {
   }), []));
 };
 
-/**
- * システム関連の状態のみを取得するフック（v3.0.0拡張・最適化版）
- */
 export const useSystemState = () => {
   return useDashboardSelector(useCallback(state => ({
     folderTree: state.folderTree,
@@ -376,37 +384,29 @@ export const useSystemState = () => {
   }), []));
 };
 
-/**
- * ファイル操作を作成するファクトリー関数（v3.0.0対応・完全修正版）
- */
 export const createFileOperations = (actions, executeFileOperation, notifySuccess, notifyError) => {
   
-  // 操作完了後の更新通知（確実な更新版）
-  const notifyOperationComplete = (operationId, operationType = 'file_operation') => {
-    // カスタムイベントを即座に発火
+  const notifyOperationComplete = (operationId, operationType = 'file_operation', isLightweight = false) => {
     const event = new CustomEvent('fileOperationCompleted', {
       detail: { 
         operationType, 
         data: { 
           operationId,
-          timestamp: Date.now() 
+          timestamp: Date.now(),
+          isLightweight
         }
       }
     });
     window.dispatchEvent(event);
     
-    console.log('🔄 File operation completed event dispatched:', operationType, operationId);
-    
-    // 操作完了後に操作履歴から削除
     if (operationId) {
       setTimeout(() => {
         actions.removeOperation(operationId);
-      }, 2000); // 2秒後に削除
+      }, 2000);
     }
   };
 
   return {
-    // 基本操作（documentsベース）- createFile関数を修正
     async createFile(filename, currentPath, content = '') {
       const operationId = Date.now().toString();
       actions.addOperation({
@@ -424,7 +424,7 @@ export const createFileOperations = (actions, executeFileOperation, notifySucces
         
         let targetPath;
         if (isSpecialPath) {
-          targetPath = filename; // documentsフォルダ直下に作成
+          targetPath = filename;
         } else {
           const normalizedCurrentPath = currentPath.startsWith('documents/') 
             ? currentPath.substring(10) 
@@ -432,19 +432,19 @@ export const createFileOperations = (actions, executeFileOperation, notifySucces
           targetPath = normalizedCurrentPath ? joinPaths(normalizedCurrentPath, filename) : filename;
         }
 
-        // 進行状況を更新
         actions.updateOperation(operationId, { progress: 50 });
 
         const result = await executeFileOperation('create_file', {
           path: targetPath,
-          content: content  // アップロードされたファイルの内容を使用
+          content: content
         });
 
         if (result?.success) {
           actions.updateOperation(operationId, { status: 'completed', progress: 100 });
-          notifySuccess(`ファイル「${filename}」を作成しました`);
           
-          // 操作完了を通知（即座更新）
+          // コンパクトな通知
+          notifySuccess('ファイルを作成しました');
+          
           notifyOperationComplete(operationId, 'create_file');
           
           return true;
@@ -460,7 +460,6 @@ export const createFileOperations = (actions, executeFileOperation, notifySucces
         });
         notifyError(error.message || 'ファイルの作成に失敗しました');
         
-        // エラー時も一定時間後に操作履歴から削除
         setTimeout(() => {
           actions.removeOperation(operationId);
         }, 5000);
@@ -500,9 +499,10 @@ export const createFileOperations = (actions, executeFileOperation, notifySucces
         
         if (result?.success) {
           actions.updateOperation(operationId, { status: 'completed', progress: 100 });
-          notifySuccess(`フォルダ「${folderName}」を作成しました`);
           
-          // 操作完了を通知（即座更新）
+          // コンパクトな通知
+          notifySuccess('フォルダを作成しました');
+          
           notifyOperationComplete(operationId, 'create_folder');
           
           return true;
@@ -542,23 +542,17 @@ export const createFileOperations = (actions, executeFileOperation, notifySucces
 
         let result;
         if (currentPath === 'trash') {
-          // ゴミ箱からの完全削除
           result = await executeFileOperation('permanently_delete', { path: filepath });
-          if (result?.success) {
-            notifySuccess(`ファイル「${filepath}」を完全に削除しました`);
-          }
         } else {
-          // ゴミ箱へ移動
           result = await executeFileOperation('delete', { path: filepath });
-          if (result?.success) {
-            notifySuccess(`ファイル「${filepath}」をゴミ箱に移動しました`);
-          }
         }
         
         if (result?.success) {
           actions.updateOperation(operationId, { status: 'completed', progress: 100 });
           
-          // 操作完了を通知（即座更新）
+          // コンパクトな通知
+          notifySuccess(currentPath === 'trash' ? '完全に削除しました' : 'ゴミ箱に移動しました');
+          
           notifyOperationComplete(operationId, 'delete_file');
           
           return true;
@@ -582,9 +576,11 @@ export const createFileOperations = (actions, executeFileOperation, notifySucces
       }
     },
 
-    // v3.0.0 新機能（他のメソッドも同様に遅延付きで実装）
     async addToFavorites(filepath) {
       const operationId = Date.now().toString();
+      
+      actions.updateFileFavoriteStatus(filepath, true);
+      
       actions.addOperation({
         id: operationId,
         type: 'favorite',
@@ -601,32 +597,38 @@ export const createFileOperations = (actions, executeFileOperation, notifySucces
         
         if (result?.success) {
           actions.updateOperation(operationId, { status: 'completed', progress: 100 });
-          notifySuccess(`「${filepath}」をお気に入りに追加しました`);
           
-          notifyOperationComplete(operationId, 'add_to_favorites');
+          // お気に入り操作では通知しない
+          
+          notifyOperationComplete(operationId, 'add_to_favorites', true);
           return true;
         } else {
+          actions.updateFileFavoriteStatus(filepath, false);
           throw new Error(result?.error?.message || 'お気に入りの追加に失敗しました');
         }
 
       } catch (error) {
+        actions.updateFileFavoriteStatus(filepath, false);
+        
         actions.updateOperation(operationId, { 
           status: 'error', 
           error: error.message,
           progress: 0 
         });
-        notifyError(error.message || 'お気に入りの追加に失敗しました');
         
         setTimeout(() => {
           actions.removeOperation(operationId);
         }, 5000);
         
-        return false;
+        throw error;
       }
     },
 
     async removeFromFavorites(filepath) {
       const operationId = Date.now().toString();
+      
+      actions.updateFileFavoriteStatus(filepath, false);
+      
       actions.addOperation({
         id: operationId,
         type: 'unfavorite',
@@ -643,27 +645,30 @@ export const createFileOperations = (actions, executeFileOperation, notifySucces
         
         if (result?.success) {
           actions.updateOperation(operationId, { status: 'completed', progress: 100 });
-          notifySuccess(`「${filepath}」をお気に入りから削除しました`);
           
-          notifyOperationComplete(operationId, 'remove_from_favorites');
+          // お気に入り操作では通知しない
+          
+          notifyOperationComplete(operationId, 'remove_from_favorites', true);
           return true;
         } else {
+          actions.updateFileFavoriteStatus(filepath, true);
           throw new Error(result?.error?.message || 'お気に入りの削除に失敗しました');
         }
 
       } catch (error) {
+        actions.updateFileFavoriteStatus(filepath, true);
+        
         actions.updateOperation(operationId, { 
           status: 'error', 
           error: error.message,
           progress: 0 
         });
-        notifyError(error.message || 'お気に入りの削除に失敗しました');
         
         setTimeout(() => {
           actions.removeOperation(operationId);
         }, 5000);
         
-        return false;
+        throw error;
       }
     },
 
@@ -685,7 +690,9 @@ export const createFileOperations = (actions, executeFileOperation, notifySucces
         
         if (result?.success) {
           actions.updateOperation(operationId, { status: 'completed', progress: 100 });
-          notifySuccess(`「${filepath}」を復元しました`);
+          
+          // コンパクトな通知
+          notifySuccess('復元しました');
           
           notifyOperationComplete(operationId, 'restore_from_trash');
           return true;
@@ -727,6 +734,8 @@ export const createFileOperations = (actions, executeFileOperation, notifySucces
         
         if (result?.success) {
           actions.updateOperation(operationId, { status: 'completed', progress: 100 });
+          
+          // コンパクトな通知
           notifySuccess('ゴミ箱を空にしました');
           
           notifyOperationComplete(operationId, 'empty_trash');
@@ -772,7 +781,9 @@ export const createFileOperations = (actions, executeFileOperation, notifySucces
         
         if (result?.success) {
           actions.updateOperation(operationId, { status: 'completed', progress: 100 });
-          notifySuccess(`「${filepath}」をコピーしました`);
+          
+          // コンパクトな通知
+          notifySuccess('コピーしました');
           
           notifyOperationComplete(operationId, 'copy_file');
           return true;
@@ -817,7 +828,9 @@ export const createFileOperations = (actions, executeFileOperation, notifySucces
         
         if (result?.success) {
           actions.updateOperation(operationId, { status: 'completed', progress: 100 });
-          notifySuccess(`「${filepath}」を移動しました`);
+          
+          // コンパクトな通知
+          notifySuccess('移動しました');
           
           notifyOperationComplete(operationId, 'move_file');
           return true;

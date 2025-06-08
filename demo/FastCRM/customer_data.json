@@ -1,0 +1,28 @@
+{
+  "users": {
+    "admin": {
+      "id": "admin",
+      "username": "admin",
+      "customers": []
+    }
+  },
+  "customers": {},
+  "lastUpdated": "2025-06-08T04:49:39.696Z",
+  "metadata": {
+    "totalUsers": 1,
+    "totalCustomers": 0,
+    "version": "1.0.0",
+    "categories": [
+      "見込み客",
+      "既存顧客",
+      "VIP顧客",
+      "休眠顧客"
+    ],
+    "statuses": [
+      "アクティブ",
+      "非アクティブ",
+      "要フォロー",
+      "契約済み"
+    ]
+  }
+}

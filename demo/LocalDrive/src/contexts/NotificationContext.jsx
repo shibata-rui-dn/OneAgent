@@ -25,9 +25,11 @@ const initialState = {
 const notificationReducer = (state, action) => {
   switch (action.type) {
     case NOTIFICATION_ACTIONS.ADD_NOTIFICATION:
+      // 最大3つまでの通知に制限
+      const newNotifications = [action.payload, ...state.notifications];
       return {
         ...state,
-        notifications: [action.payload, ...state.notifications]
+        notifications: newNotifications.slice(0, 3)
       };
 
     case NOTIFICATION_ACTIONS.REMOVE_NOTIFICATION:
@@ -65,7 +67,7 @@ const NotificationContext = createContext(null);
 /**
  * 通知プロバイダーコンポーネント（最適化版）
  */
-export const NotificationProvider = ({ children, maxNotifications = 5 }) => {
+export const NotificationProvider = ({ children, maxNotifications = 3 }) => {
   const [state, dispatch] = useReducer(notificationReducer, initialState);
 
   /**
@@ -77,7 +79,7 @@ export const NotificationProvider = ({ children, maxNotifications = 5 }) => {
       id,
       type: NOTIFICATION_TYPES.INFO,
       autoHide: true,
-      duration: 5000,
+      duration: 1500, // 1.5秒に変更
       showIcon: true,
       dismissible: true,
       ...notification,
@@ -96,24 +98,8 @@ export const NotificationProvider = ({ children, maxNotifications = 5 }) => {
       }, newNotification.duration);
     }
 
-    // 最大数を超えた場合、古い通知を削除（非同期で処理）
-    setTimeout(() => {
-      dispatch((prevState) => {
-        if (prevState.notifications && prevState.notifications.length > maxNotifications) {
-          const oldestNotification = prevState.notifications[prevState.notifications.length - 1];
-          if (oldestNotification) {
-            return {
-              type: NOTIFICATION_ACTIONS.REMOVE_NOTIFICATION,
-              payload: { id: oldestNotification.id }
-            };
-          }
-        }
-        return null;
-      });
-    }, 0);
-
     return id;
-  }, [maxNotifications]); // state.notifications.lengthを依存配列から除去
+  }, []);
 
   /**
    * 通知を削除
@@ -177,7 +163,7 @@ export const NotificationProvider = ({ children, maxNotifications = 5 }) => {
       type: NOTIFICATION_TYPES.WARNING,
       title: '警告',
       message,
-      duration: 8000, // 警告は少し長めに表示
+      duration: 2000, // 警告は2秒表示
       ...options
     });
   }, [addNotification]);

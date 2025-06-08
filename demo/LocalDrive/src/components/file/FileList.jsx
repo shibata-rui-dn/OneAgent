@@ -35,45 +35,35 @@ import {
   createFileOperations
 } from '../../contexts/DashboardContext';
 import { isTextFile } from '../../utils/fileUtils.js';
+import { downloadSingleFile, downloadMultipleFilesAsZip } from '../../utils/downloadUtils.js';
 
-/**
- * 最適化されたファイル一覧コンポーネント（v3.0.0対応・操作機能完全実装）
- * 修正：表示モード切り替え削除、コンテキストメニュー位置調整、カスタムイベント対応
- */
 const FileList = React.memo(() => {
-  // Context から必要な状態のみ取得
   const actions = useDashboardActions();
   const { viewMode } = useUIState();
   const { files, currentPath, selectedFiles, searchQuery, isLoadingFiles } = useFileState();
   const { recentFiles, favorites, trashItems } = useSystemState();
   
-  // Auth と通知フック
   const { executeFileOperation } = useAuth();
   const { success: notifySuccess, error: notifyError } = useNotification();
   
-  // ファイル操作を作成
-  const fileOperations = useMemo(() => 
+  const fileOperations = useMemo(() =>
     createFileOperations(actions, executeFileOperation, notifySuccess, notifyError),
     [actions, executeFileOperation, notifySuccess, notifyError]
   );
   
-  // ローカル状態（FileList固有の状態のみ）
   const [contextMenu, setContextMenu] = useState(null);
   const [sortBy, setSortBy] = useState('name');
   const [sortDirection, setSortDirection] = useState('asc');
   const [selectAll, setSelectAll] = useState(false);
-  const [isRenaming, setIsRenaming] = useState(null); // 名前変更中のファイル
+  const [isRenaming, setIsRenaming] = useState(null);
   const [draggedFile, setDraggedFile] = useState(null);
   
-  // ファイルプレビュー・編集関連の状態
   const [previewFile, setPreviewFile] = useState(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
   
-  // 前回計算結果をキャッシュ
   const sortedFilesCache = useRef({ files: [], sortBy: '', sortDirection: '', result: [] });
   
-  // 表示するファイルリストを決定（特別なパス対応）
   const displayFiles = useMemo(() => {
     switch (currentPath) {
       case 'recent':
@@ -87,16 +77,27 @@ const FileList = React.memo(() => {
     }
   }, [currentPath, files, recentFiles, favorites, trashItems]);
   
-  // ソートされたファイル一覧を取得（最適化版）
+  // お気に入り状態を判定するためのSet（最適化版）
+  const favoritesSet = useMemo(() => {
+    if (!Array.isArray(favorites)) return new Set();
+    return new Set(favorites.map(fav => fav.path || fav.name));
+  }, [favorites]);
+
+  // ファイルリストにお気に入り状態を注入（最適化版）
+  const filesWithFavoriteStatus = useMemo(() => {
+    return displayFiles.map(file => ({
+      ...file,
+      inFavorites: favoritesSet.has(file.path || file.name)
+    }));
+  }, [displayFiles, favoritesSet]);
+  
   const sortedFiles = useMemo(() => {
-    // キャッシュチェック
     const cache = sortedFilesCache.current;
-    if (cache.files === displayFiles && cache.sortBy === sortBy && cache.sortDirection === sortDirection) {
+    if (cache.files === filesWithFavoriteStatus && cache.sortBy === sortBy && cache.sortDirection === sortDirection) {
       return cache.result;
     }
     
-    const sorted = [...displayFiles].sort((a, b) => {
-      // ディレクトリを優先（ゴミ箱以外）
+    const sorted = [...filesWithFavoriteStatus].sort((a, b) => {
       if (currentPath !== 'trash') {
         if (a.isDirectory && !b.isDirectory) return -1;
         if (!a.isDirectory && b.isDirectory) return 1;
@@ -121,21 +122,15 @@ const FileList = React.memo(() => {
       return sortDirection === 'asc' ? comparison : -comparison;
     });
     
-    // キャッシュ更新
-    sortedFilesCache.current = { files: displayFiles, sortBy, sortDirection, result: sorted };
+    sortedFilesCache.current = { files: filesWithFavoriteStatus, sortBy, sortDirection, result: sorted };
     return sorted;
-  }, [displayFiles, sortBy, sortDirection, currentPath]);
+  }, [filesWithFavoriteStatus, sortBy, sortDirection, currentPath]);
 
-  // 選択されたファイルのSet（最適化版）
   const selectedFilesSet = useMemo(() => {
     return new Set(selectedFiles.map(f => f.name || f));
   }, [selectedFiles]);
 
-  /**
-   * ディレクトリを再読み込み（修正：カスタムイベント使用）
-   */
   const refreshDirectory = useCallback(async () => {
-    // カスタムイベントを発火して即座更新
     const event = new CustomEvent('fileOperationCompleted', {
       detail: { 
         operationType: 'refresh', 
@@ -146,43 +141,32 @@ const FileList = React.memo(() => {
       }
     });
     window.dispatchEvent(event);
-    
-    console.log('🔄 Manual refresh event dispatched for path:', currentPath);
   }, [currentPath]);
 
-  /**
-   * コンテキストメニューを表示（位置調整機能追加）
-   */
   const handleContextMenu = useCallback((event, file) => {
     event.preventDefault();
     
-    // 画面のサイズを取得
     const viewportWidth = window.innerWidth;
     const viewportHeight = window.innerHeight;
     
-    // コンテキストメニューの推定サイズ
-    const menuWidth = 200; // 推定幅
-    const menuHeight = 300; // 推定高さ
+    const menuWidth = 200;
+    const menuHeight = 300;
     
     let x = event.clientX;
     let y = event.clientY;
     
-    // 右端を超える場合は左側に表示
     if (x + menuWidth > viewportWidth) {
-      x = viewportWidth - menuWidth - 10; // 10pxのマージン
+      x = viewportWidth - menuWidth - 10;
     }
     
-    // 下端を超える場合は上側に表示
     if (y + menuHeight > viewportHeight) {
-      y = viewportHeight - menuHeight - 10; // 10pxのマージン
+      y = viewportHeight - menuHeight - 10;
     }
     
-    // 左端より左に行かないように調整
     if (x < 10) {
       x = 10;
     }
     
-    // 上端より上に行かないように調整
     if (y < 10) {
       y = 10;
     }
@@ -194,22 +178,14 @@ const FileList = React.memo(() => {
     });
   }, []);
   
-  /**
-   * コンテキストメニューを閉じる
-   */
   const closeContextMenu = useCallback(() => {
     setContextMenu(null);
   }, []);
 
-  /**
-   * ファイルクリックハンドラー（v3.0.0対応・プレビュー機能追加）
-   */
   const handleFileClick = useCallback((file) => {
     if (file.isDirectory && currentPath !== 'trash') {
-      // ディレクトリの場合はナビゲート（ゴミ箱以外）
       let newPath;
       if (currentPath === 'recent' || currentPath === 'favorites') {
-        // 特別なパスからのナビゲーション
         newPath = `documents/${file.path}`;
       } else if (currentPath.startsWith('documents')) {
         const basePath = currentPath === 'documents' ? '' : currentPath.substring(10);
@@ -219,14 +195,10 @@ const FileList = React.memo(() => {
       }
       actions.setCurrentPath(newPath);
     } else {
-      // ファイルの場合はプレビューを開く
       handlePreviewFile(file);
     }
   }, [currentPath, actions]);
 
-  /**
-   * ファイル選択ハンドラー（最適化版）
-   */
   const handleFileSelection = useCallback((fileName, isSelected) => {
     const file = displayFiles.find(f => f.name === fileName);
     if (file) {
@@ -237,9 +209,6 @@ const FileList = React.memo(() => {
     }
   }, [displayFiles, selectedFiles, actions]);
 
-  /**
-   * 全選択の切り替え（最適化版）
-   */
   const handleSelectAll = useCallback(() => {
     const newSelectAll = !selectAll;
     setSelectAll(newSelectAll);
@@ -248,9 +217,6 @@ const FileList = React.memo(() => {
     actions.setSelectedFiles(newSelectedFiles);
   }, [selectAll, displayFiles, actions]);
 
-  /**
-   * ソート変更ハンドラー
-   */
   const handleSortChange = useCallback((field) => {
     if (sortBy === field) {
       setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
@@ -260,9 +226,6 @@ const FileList = React.memo(() => {
     }
   }, [sortBy]);
 
-  /**
-   * ソート方向のアイコンを取得（メモ化）
-   */
   const getSortIcon = useCallback((field) => {
     if (sortBy !== field) return null;
     return sortDirection === 'asc' ? 
@@ -270,9 +233,6 @@ const FileList = React.memo(() => {
       <SortDesc className="w-4 h-4 ml-1" />;
   }, [sortBy, sortDirection]);
 
-  /**
-   * ファイル削除ハンドラー（v3.0.0対応）
-   */
   const handleDeleteFile = useCallback(async (filepath) => {
     const action = currentPath === 'trash' ? '完全に削除' : 'ゴミ箱に移動';
     if (!confirm(`「${filepath}」を${action}しますか？`)) return;
@@ -280,53 +240,49 @@ const FileList = React.memo(() => {
     try {
       const success = await fileOperations.deleteFile(filepath, currentPath);
       if (success) {
-        // 選択解除
         actions.setSelectedFiles([]);
-        // ディレクトリ更新は自動で行われる（カスタムイベント）
       }
     } catch (error) {
       notifyError(`削除に失敗しました: ${error.message}`);
     }
   }, [fileOperations, currentPath, actions, notifyError]);
 
-  /**
-   * お気に入り追加/削除ハンドラー
-   */
-  const handleToggleFavorite = useCallback(async (filepath, isFavorite) => {
+  // 最適化されたお気に入りトグル処理（通知削除）
+  const handleToggleFavorite = useCallback(async (file, event) => {
+    // イベントの伝播を停止
+    if (event) {
+      event.stopPropagation();
+      event.preventDefault();
+    }
+    
+    const filepath = file.path || file.name;
+    const isFavorite = file.inFavorites || favoritesSet.has(filepath);
+    
     try {
-      let success;
       if (isFavorite) {
-        success = await fileOperations.removeFromFavorites(filepath);
+        await fileOperations.removeFromFavorites(filepath);
+        // 通知は削除
       } else {
-        success = await fileOperations.addToFavorites(filepath);
-      }
-      
-      if (success) {
-        // 更新は自動で行われる（カスタムイベント）
+        await fileOperations.addToFavorites(filepath);
+        // 通知は削除
       }
     } catch (error) {
+      // エラー時はfileOperations内でローカル状態が復元される
       notifyError(`お気に入り操作に失敗しました: ${error.message}`);
     }
-  }, [fileOperations, notifyError]);
+  }, [fileOperations, favoritesSet, notifyError]);
 
-  /**
-   * ゴミ箱から復元ハンドラー
-   */
   const handleRestoreFromTrash = useCallback(async (filepath) => {
     try {
       const success = await fileOperations.restoreFromTrash(filepath);
       if (success) {
         actions.setSelectedFiles([]);
-        // 更新は自動で行われる（カスタムイベント）
       }
     } catch (error) {
       notifyError(`復元に失敗しました: ${error.message}`);
     }
   }, [fileOperations, actions, notifyError]);
 
-  /**
-   * ファイル名変更ハンドラー
-   */
   const handleRenameFile = useCallback(async (file, newName) => {
     if (!newName || newName === file.name) {
       setIsRenaming(null);
@@ -334,7 +290,6 @@ const FileList = React.memo(() => {
     }
 
     try {
-      // 実際のAPI呼び出し（moveを使用して名前変更）
       const basePath = currentPath.startsWith('documents/') 
         ? currentPath.substring(10) 
         : currentPath === 'documents' ? '' : currentPath;
@@ -348,10 +303,9 @@ const FileList = React.memo(() => {
       });
 
       if (result?.success) {
-        notifySuccess(`「${file.name}」を「${newName}」に名前変更しました`);
+        notifySuccess('名前を変更しました');
         setIsRenaming(null);
         
-        // 名前変更成功後にカスタムイベントを発火
         const event = new CustomEvent('fileOperationCompleted', {
           detail: { 
             operationType: 'rename_file', 
@@ -363,7 +317,6 @@ const FileList = React.memo(() => {
           }
         });
         window.dispatchEvent(event);
-        console.log('🔄 File rename event dispatched:', file.name, '->', newName);
         
       } else {
         throw new Error(result?.error?.message || '名前変更に失敗しました');
@@ -374,38 +327,25 @@ const FileList = React.memo(() => {
     }
   }, [currentPath, executeFileOperation, notifySuccess, notifyError]);
 
-  /**
-   * ファイル移動ハンドラー
-   */
   const handleMoveFile = useCallback(async (file, destinationPath) => {
     try {
       const success = await fileOperations.moveFile(file.path || file.name, destinationPath);
       if (success) {
         actions.setSelectedFiles([]);
-        // 更新は自動で行われる（カスタムイベント）
       }
     } catch (error) {
       notifyError(`移動に失敗しました: ${error.message}`);
     }
   }, [fileOperations, actions, notifyError]);
 
-  /**
-   * ファイルコピーハンドラー
-   */
   const handleCopyFile = useCallback(async (file, destinationPath) => {
     try {
       const success = await fileOperations.copyFile(file.path || file.name, destinationPath);
-      if (success) {
-        // 更新は自動で行われる（カスタムイベント）
-      }
     } catch (error) {
       notifyError(`コピーに失敗しました: ${error.message}`);
     }
   }, [fileOperations, notifyError]);
 
-  /**
-   * ファイルプレビューハンドラー（実装版・修正版）
-   */
   const handlePreviewFile = useCallback(async (file) => {
     if (file.isDirectory) return;
     
@@ -414,15 +354,61 @@ const FileList = React.memo(() => {
     setIsLoadingPreview(true);
     
     try {
-      // ファイル内容を読み取り
       const result = await executeFileOperation('read_file', {
         path: file.path || file.name
       });
       
-      if (result?.success && result.result) {
-        // レスポンスからコンテンツを抽出
-        let content = '';
-        if (Array.isArray(result.result.content)) {
+      if (!result?.success) {
+        throw new Error(result?.error?.message || 'ファイルの読み取りに失敗しました');
+      }
+
+      let content = '';
+      
+      if (result.data && result.data.file && result.data.file.content !== undefined) {
+        content = result.data.file.content;
+      } else if (result.result) {
+        const extractJSONResponse = (resultData) => {
+          try {
+            if (typeof resultData === 'object' && resultData !== null) {
+              if (resultData.success !== undefined) {
+                return resultData;
+              }
+              if (resultData.data && resultData.data.file) {
+                return resultData;
+              }
+            }
+
+            let jsonStr = '';
+            if (Array.isArray(resultData.content)) {
+              jsonStr = resultData.content
+                .filter(item => item.type === 'text')
+                .map(item => item.text)
+                .join('\n');
+            } else if (typeof resultData === 'string') {
+              jsonStr = resultData;
+            } else if (resultData.text) {
+              jsonStr = resultData.text;
+            }
+
+            if (jsonStr.trim()) {
+              const parsed = JSON.parse(jsonStr);
+              if (parsed.success !== undefined && parsed.data) {
+                return parsed;
+              }
+              return parsed;
+            }
+            
+            return null;
+          } catch (error) {
+            return null;
+          }
+        };
+        
+        const extractedResponse = extractJSONResponse(result.result);
+        
+        if (extractedResponse && extractedResponse.success && extractedResponse.data && extractedResponse.data.file) {
+          content = extractedResponse.data.file.content || '';
+        } else if (Array.isArray(result.result.content)) {
           content = result.result.content
             .filter(item => item.type === 'text')
             .map(item => item.text)
@@ -434,17 +420,17 @@ const FileList = React.memo(() => {
         } else if (result.result.content) {
           content = result.result.content;
         }
-        
-        console.log('File content loaded:', content.substring(0, 100) + '...'); // デバッグ用
-        
-        // プレビューファイルの状態を更新（contentを含む）
-        setPreviewFile({
-          ...file,
-          content: content
-        });
-      } else {
-        throw new Error(result?.error?.message || 'ファイルの読み取りに失敗しました');
       }
+      
+      if (content === undefined || content === null) {
+        throw new Error('ファイル内容を取得できませんでした');
+      }
+      
+      setPreviewFile({
+        ...file,
+        content: content
+      });
+      
     } catch (error) {
       console.error('ファイルプレビューエラー:', error);
       notifyError(`ファイルの読み取りに失敗しました: ${error.message}`);
@@ -455,9 +441,6 @@ const FileList = React.memo(() => {
     }
   }, [executeFileOperation, notifyError]);
 
-  /**
-   * ファイル保存ハンドラー（新規実装）
-   */
   const handleSaveFile = useCallback(async (content) => {
     if (!previewFile) return;
     
@@ -467,95 +450,95 @@ const FileList = React.memo(() => {
         content: content
       });
       
+      let success = false;
+      
       if (result?.success) {
-        notifySuccess(`「${previewFile.name}」を保存しました`);
+        success = true;
+      } else if (result?.data && result.data.success) {
+        success = true;
+      } else {
+        const extractJSONResponse = (resultData) => {
+          try {
+            if (typeof resultData === 'object' && resultData !== null) {
+              if (resultData.success !== undefined) {
+                return resultData;
+              }
+            }
+
+            let jsonStr = '';
+            if (Array.isArray(resultData.content)) {
+              jsonStr = resultData.content
+                .filter(item => item.type === 'text')
+                .map(item => item.text)
+                .join('\n');
+            } else if (typeof resultData === 'string') {
+              jsonStr = resultData;
+            } else if (resultData.text) {
+              jsonStr = resultData.text;
+            }
+
+            if (jsonStr.trim()) {
+              return JSON.parse(jsonStr);
+            }
+            
+            return null;
+          } catch (error) {
+            return null;
+          }
+        };
+
+        const extractedResponse = extractJSONResponse(result?.result || result);
+        success = extractedResponse?.success || false;
+      }
+      
+      if (success) {
+        notifySuccess('ファイルを保存しました');
         
-        // ファイル一覧を更新
-        await refreshDirectory();
+        const event = new CustomEvent('fileOperationCompleted', {
+          detail: { 
+            operationType: 'save_file', 
+            data: { 
+              fileName: previewFile.name,
+              timestamp: Date.now() 
+            }
+          }
+        });
+        window.dispatchEvent(event);
         
-        // プレビューファイルの内容も更新
         setPreviewFile({
           ...previewFile,
           content: content,
           modifiedDate: new Date().toISOString()
         });
       } else {
-        throw new Error(result?.error?.message || 'ファイルの保存に失敗しました');
+        const errorMessage = result?.error?.message || 
+                            result?.data?.error?.message || 
+                            'ファイルの保存に失敗しました';
+        throw new Error(errorMessage);
       }
     } catch (error) {
       console.error('ファイル保存エラー:', error);
       notifyError(`ファイルの保存に失敗しました: ${error.message}`);
-      throw error; // モーダル側でエラーハンドリング
+      throw error;
     }
-  }, [previewFile, executeFileOperation, notifySuccess, notifyError, refreshDirectory]);
+  }, [previewFile, executeFileOperation, notifySuccess, notifyError]);
 
-  /**
-   * ファイルダウンロードハンドラー（実装版）
-   */
   const handleDownloadFile = useCallback(async (file, content = null) => {
-    if (file.isDirectory) return;
-    
-    try {
-      let downloadContent = content;
-      
-      // コンテンツが提供されていない場合は読み取り
-      if (!downloadContent) {
-        const result = await executeFileOperation('read_file', {
-          path: file.path || file.name
-        });
-        
-        if (result?.success && result.result) {
-          if (Array.isArray(result.result.content)) {
-            downloadContent = result.result.content
-              .filter(item => item.type === 'text')
-              .map(item => item.text)
-              .join('\n');
-          } else if (typeof result.result === 'string') {
-            downloadContent = result.result;
-          } else if (result.result.text) {
-            downloadContent = result.result.text;
-          } else if (result.result.content) {
-            downloadContent = result.result.content;
-          }
-        } else {
-          throw new Error('ファイルの読み取りに失敗しました');
-        }
-      }
-      
-      // ダウンロード処理
-      const blob = new Blob([downloadContent], { 
-        type: isTextFile(file.name) ? 'text/plain' : 'application/octet-stream' 
-      });
-      const url = URL.createObjectURL(blob);
-      
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = file.name;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      
-      URL.revokeObjectURL(url);
-      
-      notifySuccess(`「${file.name}」をダウンロードしました`);
-    } catch (error) {
-      console.error('ダウンロードエラー:', error);
-      notifyError(`ダウンロードに失敗しました: ${error.message}`);
-    }
-  }, [executeFileOperation, notifySuccess, notifyError]);
+  try {
+    await downloadSingleFile(file, content, executeFileOperation);
+    notifySuccess(`「${file.name}」をダウンロードしました`);
+  } catch (error) {
+    console.error('ダウンロードエラー:', error);
+    notifyError(`ダウンロードに失敗しました: ${error.message}`);
+  }
+}, [executeFileOperation, notifySuccess, notifyError]);
 
-  /**
-   * プレビューモーダルを閉じる
-   */
   const handleClosePreview = useCallback(() => {
     setIsPreviewOpen(false);
     setPreviewFile(null);
     setIsLoadingPreview(false);
   }, []);
 
-  /**
-   * ゴミ箱を空にするハンドラー
-   */
   const handleEmptyTrash = useCallback(async () => {
     if (!confirm('ゴミ箱を空にしますか？この操作は取り消せません。')) return;
     
@@ -563,16 +546,108 @@ const FileList = React.memo(() => {
       const success = await fileOperations.emptyTrash();
       if (success) {
         actions.setSelectedFiles([]);
-        // 更新は自動で行われる（カスタムイベント）
       }
     } catch (error) {
       notifyError(`ゴミ箱を空にできませんでした: ${error.message}`);
     }
   }, [fileOperations, actions, notifyError]);
 
-  /**
-   * ドラッグ&ドロップハンドラー
-   */
+  // 一括削除処理
+  const handleBulkDelete = useCallback(async () => {
+    if (selectedFiles.length === 0) return;
+    
+    const action = currentPath === 'trash' ? '完全に削除' : 'ゴミ箱に移動';
+    const fileNames = selectedFiles.map(f => f.name || f).join('、');
+    
+    if (!confirm(`選択した${selectedFiles.length}個のアイテムを${action}しますか？\n\n${fileNames}`)) return;
+    
+    try {
+      let successCount = 0;
+      for (const file of selectedFiles) {
+        const filepath = file.path || file.name || file;
+        const success = await fileOperations.deleteFile(filepath, currentPath);
+        if (success) successCount++;
+      }
+      
+      if (successCount > 0) {
+        notifySuccess(`${successCount}個のアイテムを${action}しました`);
+        actions.setSelectedFiles([]);
+        
+        // 画面更新のためのイベント発火
+        const event = new CustomEvent('fileOperationCompleted', {
+          detail: { 
+            operationType: 'bulk_delete', 
+            data: { 
+              count: successCount,
+              timestamp: Date.now() 
+            }
+          }
+        });
+        window.dispatchEvent(event);
+      }
+      
+      if (successCount < selectedFiles.length) {
+        notifyError(`${selectedFiles.length - successCount}個のアイテムの${action}に失敗しました`);
+      }
+    } catch (error) {
+      notifyError(`一括${action}に失敗しました: ${error.message}`);
+    }
+  }, [selectedFiles, currentPath, fileOperations, actions, notifySuccess, notifyError]);
+
+  const handleBulkDownload = useCallback(async () => {
+  if (selectedFiles.length === 0) return;
+  
+  try {
+    const filename = await downloadMultipleFilesAsZip(selectedFiles, executeFileOperation);
+    notifySuccess(`${selectedFiles.length}個のアイテムをZIPでダウンロードしました（${filename}）`);
+    actions.setSelectedFiles([]);
+  } catch (error) {
+    console.error('一括ダウンロードエラー:', error);
+    notifyError(`一括ダウンロードに失敗しました: ${error.message}`);
+  }
+}, [selectedFiles, executeFileOperation, actions, notifySuccess, notifyError]);
+
+  // 一括復元処理（ゴミ箱用）
+  const handleBulkRestore = useCallback(async () => {
+    if (selectedFiles.length === 0) return;
+    
+    const fileNames = selectedFiles.map(f => f.name || f).join('、');
+    
+    if (!confirm(`選択した${selectedFiles.length}個のアイテムを復元しますか？\n\n${fileNames}`)) return;
+    
+    try {
+      let successCount = 0;
+      for (const file of selectedFiles) {
+        const filepath = file.path || file.name || file;
+        const success = await fileOperations.restoreFromTrash(filepath);
+        if (success) successCount++;
+      }
+      
+      if (successCount > 0) {
+        notifySuccess(`${successCount}個のアイテムを復元しました`);
+        actions.setSelectedFiles([]);
+        
+        // 画面更新のためのイベント発火
+        const event = new CustomEvent('fileOperationCompleted', {
+          detail: { 
+            operationType: 'bulk_restore', 
+            data: { 
+              count: successCount,
+              timestamp: Date.now() 
+            }
+          }
+        });
+        window.dispatchEvent(event);
+      }
+      
+      if (successCount < selectedFiles.length) {
+        notifyError(`${selectedFiles.length - successCount}個のアイテムの復元に失敗しました`);
+      }
+    } catch (error) {
+      notifyError(`一括復元に失敗しました: ${error.message}`);
+    }
+  }, [selectedFiles, fileOperations, actions, notifySuccess, notifyError]);
+
   const handleDragStart = useCallback((file) => {
     setDraggedFile(file);
   }, []);
@@ -584,7 +659,7 @@ const FileList = React.memo(() => {
   const handleDrop = useCallback(async (targetFile, draggedFile) => {
     if (!draggedFile || !targetFile.isDirectory || currentPath === 'trash') return;
     
-    if (draggedFile.name === targetFile.name) return; // 自分自身にはドロップできない
+    if (draggedFile.name === targetFile.name) return;
     
     try {
       const destinationPath = targetFile.path || targetFile.name;
@@ -594,9 +669,6 @@ const FileList = React.memo(() => {
     }
   }, [currentPath, handleMoveFile, notifyError]);
 
-  /**
-   * パスナビゲーション（v3.0.0対応）
-   */
   const pathNavigation = useMemo(() => {
     const getPathInfo = () => {
       switch (currentPath) {
@@ -657,9 +729,6 @@ const FileList = React.memo(() => {
     );
   }, [currentPath, actions]);
 
-  /**
-   * 特別なパス用のアクションボタン
-   */
   const specialActions = useMemo(() => {
     if (currentPath === 'trash' && displayFiles.length > 0) {
       return (
@@ -676,12 +745,10 @@ const FileList = React.memo(() => {
     return null;
   }, [currentPath, displayFiles, handleEmptyTrash]);
 
-  // ツールバーコンポーネント（v3.0.0対応・表示モード切り替え削除）
   const toolbar = useMemo(() => (
     <div className="border-b border-gray-200 px-4 py-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-4">
-          {/* ファイル数表示 */}
           <span className="text-sm text-gray-600">
             {displayFiles.length} アイテム
             {selectedFiles.length > 0 && (
@@ -691,19 +758,50 @@ const FileList = React.memo(() => {
             )}
           </span>
           
-          {/* 検索状態表示 */}
           {searchQuery && (
             <span className="text-sm text-blue-600 bg-blue-50 px-2 py-1 rounded">
               「{searchQuery}」で検索中
             </span>
           )}
           
-          {/* 特別なパス用アクション */}
+          {/* 一括操作ボタン */}
+          {selectedFiles.length > 0 && (
+            <div className="flex items-center space-x-2 border-l border-gray-200 pl-4">
+              {currentPath !== 'trash' && (
+                <button
+                  onClick={handleBulkDownload}
+                  className="inline-flex items-center px-3 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 border border-transparent rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-colors duration-200"
+                  title="選択したアイテムをダウンロード"
+                >
+                  <Download className="w-4 h-4 mr-1" />
+                  ダウンロード
+                </button>
+              )}
+              <button
+                onClick={handleBulkDelete}
+                className="inline-flex items-center px-3 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 border border-transparent rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-colors duration-200"
+                title={currentPath === 'trash' ? '選択したアイテムを完全に削除' : '選択したアイテムをゴミ箱に移動'}
+              >
+                <Trash2 className="w-4 h-4 mr-1" />
+                {currentPath === 'trash' ? '完全削除' : '削除'}
+              </button>
+              {currentPath === 'trash' && (
+                <button
+                  onClick={handleBulkRestore}
+                  className="inline-flex items-center px-3 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 border border-transparent rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-200"
+                  title="選択したアイテムを復元"
+                >
+                  <RotateCcw className="w-4 h-4 mr-1" />
+                  復元
+                </button>
+              )}
+            </div>
+          )}
+          
           {specialActions}
         </div>
         
         <div className="flex items-center space-x-2">
-          {/* 更新ボタン */}
           <button
             onClick={refreshDirectory}
             disabled={isLoadingFiles}
@@ -715,17 +813,14 @@ const FileList = React.memo(() => {
         </div>
       </div>
     </div>
-  ), [displayFiles.length, selectedFiles.length, searchQuery, specialActions, isLoadingFiles, refreshDirectory]);
+  ), [displayFiles.length, selectedFiles.length, searchQuery, specialActions, isLoadingFiles, refreshDirectory, currentPath, handleBulkDownload, handleBulkDelete, handleBulkRestore]);
   
   return (
     <div className="flex-1 bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-      {/* パスナビゲーション */}
       {pathNavigation}
 
-      {/* ツールバー */}
       {toolbar}
       
-      {/* ファイル一覧 */}
       <div className="flex-1 overflow-auto">
         {isLoadingFiles ? (
           <LoadingState />
@@ -743,12 +838,14 @@ const FileList = React.memo(() => {
             selectAll={selectAll}
             currentPath={currentPath}
             isRenaming={isRenaming}
+            favoritesSet={favoritesSet}
             onFileClick={handleFileClick}
             onFileSelect={handleFileSelection}
             onSelectAll={handleSelectAll}
             onSortChange={handleSortChange}
             onContextMenu={handleContextMenu}
             onRename={handleRenameFile}
+            onToggleFavorite={handleToggleFavorite}
             onDragStart={handleDragStart}
             onDragEnd={handleDragEnd}
             onDrop={handleDrop}
@@ -761,10 +858,12 @@ const FileList = React.memo(() => {
             currentPath={currentPath}
             isRenaming={isRenaming}
             draggedFile={draggedFile}
+            favoritesSet={favoritesSet}
             onFileClick={handleFileClick}
             onFileSelect={handleFileSelection}
             onContextMenu={handleContextMenu}
             onRename={handleRenameFile}
+            onToggleFavorite={handleToggleFavorite}
             onDragStart={handleDragStart}
             onDragEnd={handleDragEnd}
             onDrop={handleDrop}
@@ -772,16 +871,16 @@ const FileList = React.memo(() => {
         )}
       </div>
       
-      {/* コンテキストメニュー（位置調整対応） */}
       {contextMenu && (
         <ContextMenu
           x={contextMenu.x}
           y={contextMenu.y}
           file={contextMenu.file}
           currentPath={currentPath}
+          isFavorite={contextMenu.file.inFavorites || favoritesSet.has(contextMenu.file.path || contextMenu.file.name)}
           onClose={closeContextMenu}
           onDelete={handleDeleteFile}
-          onToggleFavorite={handleToggleFavorite}
+          onToggleFavorite={(file) => handleToggleFavorite(file)}
           onRestore={handleRestoreFromTrash}
           onRename={(file) => setIsRenaming(file.name)}
           onPreview={handlePreviewFile}
@@ -791,7 +890,6 @@ const FileList = React.memo(() => {
         />
       )}
 
-      {/* ファイルプレビュー・編集モーダル */}
       <FilePreviewModal
         file={previewFile}
         isOpen={isPreviewOpen}
@@ -806,9 +904,6 @@ const FileList = React.memo(() => {
   );
 });
 
-/**
- * リスト表示コンポーネント（v3.0.0対応・名前変更機能追加）
- */
 const ListView = React.memo(({
   files,
   sortBy,
@@ -817,12 +912,14 @@ const ListView = React.memo(({
   selectAll,
   currentPath,
   isRenaming,
+  favoritesSet,
   onFileClick,
   onFileSelect,
   onSelectAll,
   onSortChange,
   onContextMenu,
   onRename,
+  onToggleFavorite,
   onDragStart,
   onDragEnd,
   onDrop,
@@ -887,6 +984,12 @@ const ListView = React.memo(({
             {currentPath === 'trash' && (
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">元の場所</th>
             )}
+            {/* お気に入りカラムをゴミ箱以外で表示 */}
+            {currentPath !== 'trash' && (
+              <th className="w-12 px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <Star className="w-4 h-4 mx-auto" />
+              </th>
+            )}
             <th className="w-12 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"></th>
           </tr>
         </thead>
@@ -898,10 +1001,12 @@ const ListView = React.memo(({
               currentPath={currentPath}
               isSelected={selectedFiles.has(file.name)}
               isRenaming={isRenaming === file.name}
+              isFavorite={file.inFavorites}
               onClick={() => onFileClick(file)}
               onSelect={(selected) => onFileSelect(file.name, selected)}
               onContextMenu={(e) => onContextMenu(e, file)}
               onRename={(newName) => onRename(file, newName)}
+              onToggleFavorite={(e) => onToggleFavorite(file, e)}
               onDragStart={() => onDragStart(file)}
               onDragEnd={onDragEnd}
               onDrop={(draggedFile) => onDrop(file, draggedFile)}
@@ -913,18 +1018,17 @@ const ListView = React.memo(({
   );
 });
 
-/**
- * ファイルテーブル行コンポーネント（v3.0.0対応・名前変更機能追加）
- */
 const FileTableRow = React.memo(({
   file,
   currentPath,
   isSelected,
   isRenaming,
+  isFavorite,
   onClick,
   onSelect,
   onContextMenu,
   onRename,
+  onToggleFavorite,
   onDragStart,
   onDragEnd,
   onDrop
@@ -933,7 +1037,6 @@ const FileTableRow = React.memo(({
   const [isDragOver, setIsDragOver] = useState(false);
   const inputRef = useRef(null);
 
-  // 名前変更モードになった時にフォーカス
   React.useEffect(() => {
     if (isRenaming && inputRef.current) {
       inputRef.current.focus();
@@ -959,7 +1062,7 @@ const FileTableRow = React.memo(({
       onRename(editName);
     } else if (e.key === 'Escape') {
       setEditName(file.name);
-      onRename(file.name); // 元の名前で確定（実質キャンセル）
+      onRename(file.name);
     }
   };
 
@@ -981,8 +1084,6 @@ const FileTableRow = React.memo(({
     if (file.isDirectory && currentPath !== 'trash') {
       const draggedFileName = e.dataTransfer.getData('text/plain');
       if (draggedFileName && draggedFileName !== file.name) {
-        // ドロップされたファイルを探す
-        // この部分は親コンポーネントから渡される必要がある
         onDrop({ name: draggedFileName });
       }
     }
@@ -1005,7 +1106,10 @@ const FileTableRow = React.memo(({
       onDragLeave={handleDragLeave}
       onDrop={handleDropOnRow}
     >
-      <td className="px-6 py-4 whitespace-nowrap">
+      <td 
+        className="px-6 py-4 whitespace-nowrap"
+        onClick={(e) => e.stopPropagation()}
+      >
         <input
           type="checkbox"
           checked={isSelected}
@@ -1013,6 +1117,7 @@ const FileTableRow = React.memo(({
             e.stopPropagation();
             onSelect(e.target.checked);
           }}
+          onClick={(e) => e.stopPropagation()}
           className="rounded border-gray-300"
         />
       </td>
@@ -1036,9 +1141,6 @@ const FileTableRow = React.memo(({
             <span className="font-medium text-gray-900">
               {truncateText(file.name, 40)}
             </span>
-          )}
-          {file.inFavorites && (
-            <Star className="w-4 h-4 ml-2 text-yellow-500" title="お気に入り" />
           )}
           {file.isExecutable && (
             <span className="ml-2 text-xs text-orange-600" title="実行可能ファイル">⚠️</span>
@@ -1065,6 +1167,24 @@ const FileTableRow = React.memo(({
           {truncateText(file.originalPath || file.path, 30)}
         </td>
       )}
+      {/* お気に入りボタン（ゴミ箱以外） */}
+      {currentPath !== 'trash' && (
+        <td className="px-6 py-4 whitespace-nowrap text-center">
+          <button
+            onClick={onToggleFavorite}
+            className={`inline-flex items-center justify-center w-8 h-8 rounded-full transition-all duration-200 ${
+              isFavorite 
+                ? 'text-yellow-500 hover:text-yellow-600 hover:bg-yellow-50' 
+                : 'text-gray-300 hover:text-yellow-500 hover:bg-yellow-50'
+            }`}
+            title={isFavorite ? 'お気に入りから削除' : 'お気に入りに追加'}
+          >
+            <Star 
+              className={`w-5 h-5 ${isFavorite ? 'fill-current' : ''}`} 
+            />
+          </button>
+        </td>
+      )}
       <td className="px-6 py-4 whitespace-nowrap">
         <button
           className="inline-flex items-center px-2 py-1 text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded transition-colors duration-200"
@@ -1080,19 +1200,18 @@ const FileTableRow = React.memo(({
   );
 });
 
-/**
- * グリッド表示コンポーネント（最適化版・名前変更機能追加）
- */
 const GridView = React.memo(({
   files,
   selectedFiles,
   currentPath,
   isRenaming,
   draggedFile,
+  favoritesSet,
   onFileClick,
   onFileSelect,
   onContextMenu,
   onRename,
+  onToggleFavorite,
   onDragStart,
   onDragEnd,
   onDrop
@@ -1107,10 +1226,12 @@ const GridView = React.memo(({
           isSelected={selectedFiles.has(file.name)}
           isRenaming={isRenaming === file.name}
           isDragging={draggedFile?.name === file.name}
+          isFavorite={file.inFavorites}
           onClick={() => onFileClick(file)}
           onSelect={(selected) => onFileSelect(file.name, selected)}
           onContextMenu={(e) => onContextMenu(e, file)}
           onRename={(newName) => onRename(file, newName)}
+          onToggleFavorite={(e) => onToggleFavorite(file, e)}
           onDragStart={() => onDragStart(file)}
           onDragEnd={onDragEnd}
           onDrop={(draggedFile) => onDrop(file, draggedFile)}
@@ -1121,14 +1242,12 @@ const GridView = React.memo(({
   </div>
 ));
 
-/**
- * コンテキストメニューコンポーネント（v3.0.0対応・完全実装・位置調整対応）
- */
 const ContextMenu = React.memo(({ 
   x, 
   y, 
   file, 
-  currentPath, 
+  currentPath,
+  isFavorite,
   onClose, 
   onDelete, 
   onToggleFavorite, 
@@ -1142,7 +1261,6 @@ const ContextMenu = React.memo(({
   const menuItems = useMemo(() => {
     const items = [];
 
-    // 基本操作
     if (currentPath !== 'trash') {
       items.push({
         icon: Eye,
@@ -1175,13 +1293,12 @@ const ContextMenu = React.memo(({
 
       items.push({ divider: true });
 
-      // お気に入り操作
-      if (file.inFavorites) {
+      if (isFavorite) {
         items.push({
           icon: HeartOff,
           label: 'お気に入りから削除',
           action: () => {
-            onToggleFavorite(file.path || file.name, true);
+            onToggleFavorite(file);
             onClose();
           }
         });
@@ -1190,7 +1307,7 @@ const ContextMenu = React.memo(({
           icon: Heart,
           label: 'お気に入りに追加',
           action: () => {
-            onToggleFavorite(file.path || file.name, false);
+            onToggleFavorite(file);
             onClose();
           }
         });
@@ -1202,7 +1319,6 @@ const ContextMenu = React.memo(({
         icon: Copy,
         label: 'コピー',
         action: () => {
-          // コピー先の選択ダイアログを実装する必要がある
           const destination = prompt('コピー先のパスを入力してください:');
           if (destination) {
             onCopy(file, destination);
@@ -1215,7 +1331,6 @@ const ContextMenu = React.memo(({
         icon: Move,
         label: '移動',
         action: () => {
-          // 移動先の選択ダイアログを実装する必要がある
           const destination = prompt('移動先のパスを入力してください:');
           if (destination) {
             onMove(file, destination);
@@ -1227,7 +1342,6 @@ const ContextMenu = React.memo(({
       items.push({ divider: true });
     }
 
-    // ゴミ箱操作
     if (currentPath === 'trash') {
       items.push({
         icon: RotateCcw,
@@ -1240,7 +1354,6 @@ const ContextMenu = React.memo(({
       items.push({ divider: true });
     }
 
-    // 削除操作
     items.push({
       icon: Trash2,
       label: currentPath === 'trash' ? '完全に削除' : 'ゴミ箱に移動',
@@ -1252,17 +1365,15 @@ const ContextMenu = React.memo(({
     });
 
     return items;
-  }, [file, currentPath, onClose, onDelete, onToggleFavorite, onRestore, onRename, onPreview, onDownload, onMove, onCopy]);
+  }, [file, currentPath, isFavorite, onClose, onDelete, onToggleFavorite, onRestore, onRename, onPreview, onDownload, onMove, onCopy]);
   
   return (
     <>
-      {/* オーバーレイ */}
       <div 
         className="fixed inset-0 z-40" 
         onClick={onClose}
       />
       
-      {/* メニュー（位置調整対応） */}
       <div 
         className="fixed bg-white border border-gray-200 rounded-lg shadow-lg py-2 min-w-48 z-50"
         style={{ 
@@ -1296,9 +1407,6 @@ const ContextMenu = React.memo(({
   );
 });
 
-/**
- * ローディング状態コンポーネント（最適化版）
- */
 const LoadingState = React.memo(() => (
   <div className="flex items-center justify-center h-64">
     <div className="text-center">
@@ -1308,9 +1416,6 @@ const LoadingState = React.memo(() => (
   </div>
 ));
 
-/**
- * 空の状態コンポーネント（v3.0.0対応）
- */
 const EmptyState = React.memo(({ currentPath, searchQuery }) => {
   const getEmptyStateContent = () => {
     if (searchQuery) {
